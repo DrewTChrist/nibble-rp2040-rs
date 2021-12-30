@@ -8,7 +8,17 @@ mod layout;
 
 #[rtic::app(device = adafruit_kb2040::hal::pac, peripherals = true)]
 mod app {
+    use super::layout;
     use adafruit_kb2040 as bsp;
+    use bsp::hal::{
+        clocks::{init_clocks_and_plls, Clock},
+        gpio::{bank0::*, dynpin::DynPin, Pin, PullUp, PushPullOutput},
+        pac,
+        sio::Sio,
+        timer::{Alarm0, Timer},
+        usb::UsbBus,
+        watchdog::Watchdog,
+    };
     use cortex_m_rt::entry;
     use defmt::*;
     use defmt_rtt as _;
@@ -26,18 +36,6 @@ mod app {
     use rtic::{app, Mutex};
     use usb_device::class::UsbClass;
     use usb_device::class_prelude::UsbBusAllocator;
-
-    use super::layout;
-
-    use bsp::hal::{
-        clocks::{init_clocks_and_plls, Clock},
-        gpio::{bank0::*, dynpin::DynPin, Pin, PullUp, PushPullOutput},
-        pac,
-        sio::Sio,
-        timer::{Alarm0, Timer},
-        usb::UsbBus,
-        watchdog::Watchdog,
-    };
 
     const SCAN_TIME_US: u32 = 1000000;
 
@@ -87,16 +85,6 @@ mod app {
             .ok()
             .unwrap();
 
-            /*let usb_bus = UsbBus::new(
-                pac.USBCTRL_REGS,
-                pac.USBCTRL_DPRAM,
-                clocks.usb_clock,
-                true,
-                &mut pac.RESETS,
-            );
-
-            let usb_bus_allocator: UsbBusAllocator<UsbBus> = UsbBusAllocator::new(usb_bus);*/
-
             USB_BUS = Some(UsbBusAllocator::new(UsbBus::new(
                 pac.USBCTRL_REGS,
                 pac.USBCTRL_DPRAM,
@@ -105,7 +93,6 @@ mod app {
                 &mut pac.RESETS,
             )));
 
-            //let usb_bus = USB_BUS.as_ref().unwrap();
             let usb_bus = USB_BUS.as_ref().unwrap();
 
             let mut _delay =
@@ -160,30 +147,18 @@ mod app {
             )
         }
     }
-    //#[task(binds = USB_LP_CAN_TX0, priority = 2, shared = [usb_dev, usb_class])]
-    //#[task(binds = TIMER_IRQ_0, priority = 2, shared = [usb_dev, usb_class])]
-    #[task(binds = USBCTRL_IRQ, priority = 2, shared = [usb_dev, usb_class])]
-    fn usb_tx(mut c: usb_tx::Context) {
-        let usb = c.shared.usb_dev;
-        let kb = c.shared.usb_class;
-        //usb_poll(&mut c.shared.usb_dev, &mut c.shared.usb_class);
-        (usb, kb).lock(|usb, kb| {
-            usb_poll(usb, kb);
-        });
-    }
 
     // The keyberon ortho60 example has usb_rx and usb_tx functions
     // I'm thinking maybe this only needs one functions since ther is only
     // one usb enum in rp2040_pac
-    /*#[task(binds = USBCTRL_IRQ, priority = 2, shared = [usb_dev, usb_class])]
-    fn usb_rx(mut c: usb_rx::Context) {
+    #[task(binds = USBCTRL_IRQ, priority = 2, shared = [usb_dev, usb_class])]
+    fn usb_tx(mut c: usb_tx::Context) {
         let usb = c.shared.usb_dev;
         let kb = c.shared.usb_class;
-        //usb_poll(&mut c.shared.usb_dev, &mut c.shared.usb_class);
         (usb, kb).lock(|usb, kb| {
             usb_poll(usb, kb);
         });
-    }*/
+    }
 
     #[task(binds = TIMER_IRQ_0, priority = 1, shared = [usb_class, matrix, debouncer, layout, timer, alarm])]
     fn tick(mut c: tick::Context) {
@@ -196,7 +171,6 @@ mod app {
 
         (debouncer, matrix, layout, timer, alarm).lock(
             |debouncer, matrix, layout, timer, alarm| {
-                //timer.alarm_0().unwrap().clear_interrupt();
                 alarm.clear_interrupt(timer);
                 for event in debouncer.events(matrix.get().unwrap()) {
                     layout.event(event);
@@ -205,26 +179,16 @@ mod app {
                 send_report(layout.keycodes(), &mut usb_class);
             },
         );
-        /*c.shared.timer.clear_update_interrupt_flag();
-
-        for event in c
-            .shared
-            .debouncer
-            .events(c.shared.matrix.get().unwrap())
-        {
-            c.shared.layout.event(event);
-        }
-        c.shared.layout.tick();
-        send_report(c.shared.layout.keycodes(), &mut c.shared.usb_class);*/
     }
 
-    //fn send_report(iter: impl Iterator<Item = KeyCode>, usb_class: &mut usb_class<'_>) {
-    fn send_report(iter: impl Iterator<Item = KeyCode>, usb_class: &mut impl Mutex<T = keyberon::Class<'static, UsbBus, Leds>>) {
+    fn send_report(
+        iter: impl Iterator<Item = KeyCode>,
+        usb_class: &mut impl Mutex<T = keyberon::Class<'static, UsbBus, Leds>>,
+    ) {
         let report: KbHidReport = iter.collect();
         if usb_class.lock(|k| k.device_mut().set_keyboard_report(report.clone())) {
             while let Ok(0) = usb_class.lock(|k| k.write(report.as_bytes())) {}
         }
-
     }
 
     fn usb_poll(
