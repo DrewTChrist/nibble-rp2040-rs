@@ -6,6 +6,10 @@
 #![allow(unused_variables)]
 mod layout;
 
+#[link_section = ".boot2"]
+#[used]
+pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
+
 #[rtic::app(device = adafruit_kb2040::hal::pac, peripherals = true)]
 mod app {
     use super::layout;
