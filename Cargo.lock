@@ -301,6 +301,7 @@ dependencies = [
 [[package]]
 name = "keyberon"
 version = "0.2.0"
+source = "git+https://github.com/TeXitoi/keyberon#58ac73cfcd09659bf31ee405ff9f5e23b0edc527"
 dependencies = [
  "arraydeque",
  "either",
@@ -313,6 +314,7 @@ dependencies = [
 [[package]]
 name = "keyberon-macros"
 version = "0.1.0"
+source = "git+https://github.com/TeXitoi/keyberon#58ac73cfcd09659bf31ee405ff9f5e23b0edc527"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -373,6 +375,7 @@ dependencies = [
  "smart-leds",
  "smart-leds-trait",
  "usb-device",
+ "ws2812-pio",
  "ws2812-spi",
 ]
 
@@ -593,8 +596,9 @@ dependencies = [
 
 [[package]]
 name = "rp2040-hal"
-version = "0.4.0"
-source = "git+https://github.com/rp-rs/rp-hal.git#c02984b422d3cc12e14a3e17373f7bb3b57e5e58"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4cc5eed93ae7e2432580923fc5d5797c14b2bf215e1ab84e828f211881393b9"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -757,6 +761,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ee8f19f9d74293faf70901bc20ad067dc1ad390d2cbf1e3f75f721ffee908b6"
 dependencies = [
  "vcell",
+]
+
+[[package]]
+name = "ws2812-pio"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a24c81043be3852aa2cfd3f4f0e3a768eee032199816d5da44cacf9ef84c366"
+dependencies = [
+ "cortex-m",
+ "embedded-hal",
+ "embedded-time",
+ "nb 1.0.0",
+ "pio",
+ "rp2040-hal",
+ "smart-leds-trait",
 ]
 
 [[package]]

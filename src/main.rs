@@ -5,57 +5,51 @@
 #![allow(unused_mut)]
 #![allow(unused_variables)]
 
+mod demux_matrix;
 mod layout;
-use rp2040_hal;
 
 #[link_section = ".boot2"]
 #[used]
 pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 
-//#[rtic::app(device = adafruit_kb2040::hal::pac, peripherals = true, dispatchers = [PIO0_IRQ_0])]
 #[rtic::app(device = rp2040_hal::pac, peripherals = true, dispatchers = [PIO0_IRQ_0])]
 mod app {
-    use super::layout;
-    //use adafruit_kb2040::hal::{
+    use cortex_m::prelude::{
+        _embedded_hal_watchdog_Watchdog, _embedded_hal_watchdog_WatchdogEnable,
+    };
+    //use cortex_m_rt::entry;
+    use defmt_rtt as _;
+    use embedded_hal::digital::v2::OutputPin;
+    use embedded_hal::spi::MODE_0;
+    use embedded_time::duration::Extensions;
+    use embedded_time::rate::Extensions as rate_extensions;
+    use panic_probe as _;
     use rp2040_hal::{
         clocks::{init_clocks_and_plls, Clock},
-        gpio::{bank0::*, FunctionSpi, dynpin::DynPin, Pin, PullUp, PushPullOutput},
-        pac::{self, UART0, SPI0},
-        pio::{PIOExt, UninitStateMachine, PIO},
+        gpio::{bank0::*, dynpin::DynPin, FunctionSpi, Pin, PushPullOutput},
+        pac::UART0,
+        pio::PIOExt,
         sio::Sio,
-        spi::{Spi, State, SpiDevice, Enabled},
+        spi::Spi,
         timer::{Alarm0, Timer},
         usb::UsbBus,
         watchdog::Watchdog,
     };
-    use cortex_m::prelude::{
-        _embedded_hal_watchdog_Watchdog, _embedded_hal_watchdog_WatchdogEnable,
-    };
-    use cortex_m_rt::entry;
-    use defmt::*;
-    use defmt_rtt as _;
-    use embedded_hal::digital::v2::OutputPin;
-    use embedded_hal::watchdog::WatchdogEnable;
-    use embedded_hal::spi::MODE_0;
-    use embedded_time::duration::Extensions;
-    use embedded_time::rate::Extensions as rate_extensions;
-    use embedded_time::fixed_point::FixedPoint;
-    use keyberon::action::Action::{self, *};
-    use keyberon::action::{k, l, m, HoldTapConfig};
+
+    use core::iter::once;
+
     use keyberon::debounce::Debouncer;
-    use keyberon::key_code::{self, KbHidReport, KeyCode, KeyCode::*};
-    use keyberon::layout::{Layout, Event};
-    //use keyberon::matrix::{Matrix, PressedKeys};
-    use keyberon::demux_matrix::{DemuxMatrix, PressedKeys};
-    use layout as kb_layout;
-    use panic_probe as _;
-    use rtic::{app, Mutex};
-    use smart_leds::SmartLedsWrite;
-    use smart_leds::RGBW;
+    use keyberon::layout::{Event, Layout};
+    use keyberon::matrix::PressedKeys;
+    use keyberon::key_code;
+    use crate::demux_matrix::DemuxMatrix;
+    use crate::layout as kb_layout;
+
     use usb_device::class::UsbClass;
     use usb_device::class_prelude::UsbBusAllocator;
-    use ws2812_spi::Ws2812;
-    use ws2812_spi::devices;
+    use smart_leds::{brightness, SmartLedsWrite, RGB8};
+    use ws2812_pio::Ws2812 as Ws2812Pio;
+    use ws2812_spi::Ws2812 as Ws2812Spi;
 
     const MATRIX_ROWS: usize = 5;
     const MATRIX_COLS: usize = 16;
@@ -66,9 +60,7 @@ mod app {
     static mut USB_BUS: Option<UsbBusAllocator<UsbBus>> = None;
 
     pub struct Leds {
-        //caps_lock: Pin<Gpio17, PushPullOutput>,
-        //caps_lock: Spi<Enabled, SPI0, 8>,
-        caps_lock: Ws2812<Spi<Enabled, SPI0, 8>, devices::Sk6812w>,
+        caps_lock: Pin<Gpio17, PushPullOutput>,
     }
 
     impl keyberon::keyboard::Leds for Leds {
@@ -78,14 +70,18 @@ mod app {
     #[shared]
     struct Shared {
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-        usb_class: keyberon::Class<'static, UsbBus, Leds>,
+        //usb_class: keyberon::Class<'static, UsbBus, Leds>,
+        usb_class: keyberon::Class<'static, UsbBus, ()>,
         timer: Timer,
         alarm: Alarm0,
         uart: UART0,
         //matrix: Matrix<DynPin, DynPin, 4, 5>,
+        #[lock_free]
         matrix: DemuxMatrix<DynPin, DynPin, 4, 5>,
         layout: Layout,
+        #[lock_free]
         debouncer: Debouncer<PressedKeys<4, 5>>,
+        #[lock_free]
         watchdog: Watchdog,
     }
 
@@ -95,7 +91,6 @@ mod app {
     #[init]
     fn init(mut c: init::Context) -> (Shared, Local, init::Monotonics) {
         let mut resets = c.device.RESETS;
-        //let mut pac = pac::Peripherals::take().unwrap();
         let mut watchdog = Watchdog::new(c.device.WATCHDOG);
         watchdog.pause_on_debug(false);
 
@@ -112,7 +107,6 @@ mod app {
         .unwrap();
 
         let sio = Sio::new(c.device.SIO);
-        //let pins = adafruit_kb2040::Pins::new(
         let pins = rp2040_hal::gpio::Pins::new(
             c.device.IO_BANK0,
             c.device.PADS_BANK0,
@@ -133,6 +127,41 @@ mod app {
         uart.uartcr.write(|w| unsafe { w.bits(0b11_0000_0001) });
         uart.uartimsc.write(|w| w.rxim().set_bit());
 
+        let _spi_sclk = pins.gpio3.into_mode::<FunctionSpi>();
+        let _spi_mosi = pins.gpio7.into_mode::<FunctionSpi>();
+        let spi = Spi::<_, _, 8>::new(c.device.SPI0).init(
+            &mut resets,
+            SYS_HZ.Hz(),
+            3_000_000u32.Hz(),
+            &MODE_0,
+        );
+
+        let mut under = Ws2812Spi::new(spi);
+        //let mut leds = Leds { caps_lock: onboard };
+
+        let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
+        //data[0] = RGB8 { r: 0xFF, g: 0x00, b: 0x00};
+        //under.write(under_data.iter().cloned()).unwrap();
+
+        let mut timer = Timer::new(c.device.TIMER, &mut resets);
+        let mut alarm = timer.alarm_0().unwrap();
+        let _ = alarm.schedule(SCAN_TIME_US.microseconds());
+
+        let (mut pio, sm0, _, _, _) = c.device.PIO0.split(&mut resets);
+
+        let mut onboard = Ws2812Pio::new(
+            pins.gpio17.into_mode(),
+            &mut pio,
+            sm0,
+            clocks.peripheral_clock.freq(),
+            timer.count_down(),
+        );
+
+        let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
+        onboard_data[0] = RGB8 { r: 0xFF, g: 0x00, b: 0x00 };
+        onboard.write(brightness(once(onboard_data[0]), 32)).unwrap();
+
+
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
             c.device.USBCTRL_DPRAM,
@@ -145,36 +174,8 @@ mod app {
             USB_BUS = Some(usb_bus);
         }
 
-        let _spi_sclk = pins.gpio3.into_mode::<FunctionSpi>();
-        let _spi_mosi = pins.gpio17.into_mode::<FunctionSpi>();
-
-        let spi = Spi::<_, _, 8>::new(c.device.SPI0).init(
-            &mut resets,
-            SYS_HZ.Hz(),
-            3_000_000u32.Hz(),
-            &MODE_0,
-        );
-
-        let mut ws = Ws2812::new_sk6812w(spi);
-        let mut leds = Leds { caps_lock: ws };
-
-        let mut data: [RGBW<u8>; 1] = [RGBW::default(); 1];
-        let empty: [RGBW<u8>; 1] = [RGBW::default(); 1];
-
-        data[0].a = 0x10;
-
-        // Blink the LED's in a blue-green-red-white pattern.
-      /*for led in data.iter_mut().step_by(4) {
-            led.r = 0x10;
-        }*/
-
-        leds.caps_lock.write(data.iter().cloned()).unwrap();
-
-        let mut timer = Timer::new(c.device.TIMER, &mut resets);
-        let mut alarm = timer.alarm_0().unwrap();
-        let _ = alarm.schedule(SCAN_TIME_US.microseconds());
-
-        let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, leds);
+        //let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, leds);
+        let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, ());
         let usb_dev = keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() });
 
         alarm.enable_interrupt(&mut timer);
@@ -182,28 +183,29 @@ mod app {
 
         let matrix = DemuxMatrix::new(
             [
-              /*pins.a3.into_push_pull_output().into(),
-                pins.a2.into_push_pull_output().into(),
-                pins.a1.into_push_pull_output().into(),
-                pins.a0.into_push_pull_output().into(),*/
+                /*pins.gpio18.into_pull_up_input().into(),
+                pins.gpio20.into_pull_up_input().into(),
+                pins.gpio19.into_pull_up_input().into(),
+                pins.gpio10.into_pull_up_input().into(),
+                pins.gpio4.into_pull_up_input().into(),*/
                 pins.gpio29.into_push_pull_output().into(),
                 pins.gpio28.into_push_pull_output().into(),
                 pins.gpio27.into_push_pull_output().into(),
                 pins.gpio26.into_push_pull_output().into(),
             ],
             [
-              /*pins.sclk.into_push_pull_output().into(),
-                pins.miso.into_push_pull_output().into(),
-                pins.mosi.into_push_pull_output().into(),
-                pins.d10.into_push_pull_output().into(),
-                pins.d4.into_push_pull_output().into(),*/
-                pins.gpio18.into_push_pull_output().into(),
-                pins.gpio20.into_push_pull_output().into(),
-                pins.gpio19.into_push_pull_output().into(),
-                pins.gpio10.into_push_pull_output().into(),
-                pins.gpio4.into_push_pull_output().into(),
+                pins.gpio18.into_pull_up_input().into(),
+                pins.gpio20.into_pull_up_input().into(),
+                pins.gpio19.into_pull_up_input().into(),
+                pins.gpio10.into_pull_up_input().into(),
+                pins.gpio4.into_pull_up_input().into(),
+                /*pins.gpio29.into_push_pull_output().into(),
+                pins.gpio28.into_push_pull_output().into(),
+                pins.gpio27.into_push_pull_output().into(),
+                pins.gpio26.into_push_pull_output().into(),*/
             ],
             16,
+            //onboard,
         );
 
         (
@@ -236,6 +238,15 @@ mod app {
 
     #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout])]
     fn handle_event(mut c: handle_event::Context, event: Option<Event>) {
+        match event {
+            Some(e) => {
+                c.shared.layout.lock(|l| l.event(e));
+                return;
+            }
+            None => match c.shared.layout.lock(|l| l.tick()) {
+                _ => (),
+            },
+        };
         let report: key_code::KbHidReport = c.shared.layout.lock(|l| l.keycodes().collect());
         if !c
             .shared
@@ -252,8 +263,6 @@ mod app {
 
     #[task(binds = TIMER_IRQ_0, priority = 1, shared = [uart, matrix, debouncer, timer, alarm, layout, watchdog])]
     fn scan_timer_irq(mut c: scan_timer_irq::Context) {
-        let debouncer = c.shared.debouncer;
-        let matrix = c.shared.matrix;
         let mut uart = c.shared.uart;
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
@@ -262,20 +271,18 @@ mod app {
             let _ = a.schedule(SCAN_TIME_US.microseconds());
         });
 
-        c.shared.watchdog.lock(|w| w.feed());
+        c.shared.watchdog.feed();
 
-        (debouncer, matrix).lock(|d, m| {
-            for event in d.events(m.get().unwrap()) {
-                //let mut byte: u8;
-                //byte = event.coord().1;
-                //byte |= (event.coord().0 & 0b0000_0111) << 4;
-                //byte |= (event.is_press() as u8) << 7;
-                // Watchdog will catch any possibility for an infinite loop
-                //while uart.lock(|u| u.uartfr.read().txff().bit_is_set()) {}
-                //uart.lock(|u| u.uartdr.write(|w| unsafe { w.data().bits(byte) })); 
-                handle_event::spawn(Some(event)).unwrap();
-            }
-        });
+        for event in c.shared.debouncer.events(c.shared.matrix.get().unwrap()) {
+            let mut byte: u8;
+            byte = event.coord().1;
+            byte |= (event.coord().0 & 0b0000_0111) << 4;
+            byte |= (event.is_press() as u8) << 7;
+            // Watchdog will catch any possibility for an infinite loop
+            while uart.lock(|u| u.uartfr.read().txff().bit_is_set()) {}
+            uart.lock(|u| u.uartdr.write(|w| unsafe { w.data().bits(byte) }));
+            handle_event::spawn(Some(event)).unwrap();
+        }
         handle_event::spawn(None).unwrap();
     }
 

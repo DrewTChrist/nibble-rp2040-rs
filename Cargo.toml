@@ -7,8 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-#keyberon = { git = "https://github.com/TeXitoi/keyberon" }
-keyberon = { path = "/home/andrew/andrew/development/rusty/embedded/keyberon" }
+keyberon = { git = "https://github.com/TeXitoi/keyberon" }
 usb-device = "0.2.0"
 cortex-m = "0.7.3"
 cortex-m-rt = "0.7.0"
@@ -18,13 +17,14 @@ embedded-time = "0.12.0"
 defmt = "0.3.0"
 defmt-rtt = "0.3.0"
 panic-probe = { version = "0.3.0", features = ["print-defmt"] }
-#adafruit-kb2040 = "0.1.0"
-#adafruit-kb2040 = { git = "https://github.com/rp-rs/rp-hal.git"}
-rp2040-hal = { git = "https://github.com/rp-rs/rp-hal.git", features=["rt"]}
+#rp2040-hal = { git = "https://github.com/rp-rs/rp-hal.git", features=["rt"]}
+rp2040-hal = { version = "0.3", features=["rt"]}
 rp2040-boot2 = { version = "0.2", optional = true }
 smart-leds = "0.3"
 smart-leds-trait = "0.2"
 ws2812-spi = "0.4.0"
+#ws2812-pio = { git = "https://github.com/ithinuel/ws2812-pio-rs", rev = "4f0d81e594ea9934f9c4c38ed9824ad0cce4ebb5" }
+ws2812-pio = "0.1"
 
 
 [features]
