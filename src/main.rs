@@ -21,13 +21,14 @@ mod app {
     use defmt_rtt as _;
     use embedded_hal::digital::v2::OutputPin;
     use embedded_hal::spi::MODE_0;
+    use embedded_hal::prelude::_embedded_hal_serial_Write;
     use embedded_time::duration::Extensions;
     use embedded_time::rate::Extensions as rate_extensions;
     use panic_probe as _;
     use rp2040_hal::{
         clocks::{init_clocks_and_plls, Clock},
         gpio::{bank0::*, dynpin::DynPin, FunctionSpi, Pin, PushPullOutput},
-        pac::UART0,
+        pac::{UART0, UART1},
         pio::PIOExt,
         sio::Sio,
         spi::Spi,
@@ -37,6 +38,7 @@ mod app {
     };
 
     use core::iter::once;
+    use core::fmt::Write;
 
     use keyberon::debounce::Debouncer;
     use keyberon::layout::{Event, Layout};
@@ -74,7 +76,9 @@ mod app {
         usb_class: keyberon::Class<'static, UsbBus, ()>,
         timer: Timer,
         alarm: Alarm0,
-        uart: UART0,
+        uart0: UART0,
+        #[lock_free]
+        uart1: rp2040_hal::uart::UartPeripheral<rp2040_hal::uart::Enabled, UART1>,
         //matrix: Matrix<DynPin, DynPin, 4, 5>,
         #[lock_free]
         matrix: DemuxMatrix<DynPin, DynPin, 4, 5>,
@@ -120,12 +124,31 @@ mod app {
 
         resets.reset.modify(|_, w| w.uart0().clear_bit());
         while resets.reset_done.read().uart0().bit_is_clear() {}
-        let uart = c.device.UART0;
-        uart.uartibrd.write(|w| unsafe { w.bits(0b0100_0011) });
-        uart.uartfbrd.write(|w| unsafe { w.bits(0b0011_0100) });
-        uart.uartlcr_h.write(|w| unsafe { w.bits(0b0110_0000) });
-        uart.uartcr.write(|w| unsafe { w.bits(0b11_0000_0001) });
-        uart.uartimsc.write(|w| w.rxim().set_bit());
+        let uart0 = c.device.UART0;
+        uart0.uartibrd.write(|w| unsafe { w.bits(0b0100_0011) });
+        uart0.uartfbrd.write(|w| unsafe { w.bits(0b0011_0100) });
+        uart0.uartlcr_h.write(|w| unsafe { w.bits(0b0110_0000) });
+        uart0.uartcr.write(|w| unsafe { w.bits(0b11_0000_0001) });
+        uart0.uartimsc.write(|w| w.rxim().set_bit());
+
+        let uart_pins = (
+            pins.gpio0.into_mode::<rp2040_hal::gpio::FunctionUart>(),
+            pins.gpio1.into_mode::<rp2040_hal::gpio::FunctionUart>(),
+        );
+
+        let mut uart1 = rp2040_hal::uart::UartPeripheral::<_, _>::new(c.device.UART1, &mut resets)
+            .enable(
+                rp2040_hal::uart::common_configs::_9600_8_N_1,
+                clocks.peripheral_clock.freq().into(),
+            )
+            .unwrap();
+
+
+        for i in 0..100 {
+            writeln!(uart1, "zero\r\n").unwrap();
+            uart1.write_full_blocking(b"one\r\n");
+        }
+
 
         let _spi_sclk = pins.gpio3.into_mode::<FunctionSpi>();
         let _spi_mosi = pins.gpio7.into_mode::<FunctionSpi>();
@@ -212,7 +235,8 @@ mod app {
             Shared {
                 usb_dev: usb_dev,
                 usb_class: usb_class,
-                uart: uart,
+                uart0: uart0,
+                uart1: uart1,
                 timer: timer,
                 alarm: alarm,
                 matrix: matrix.unwrap(),
@@ -261,9 +285,9 @@ mod app {
         while let Ok(0) = c.shared.usb_class.lock(|k| k.write(report.as_bytes())) {}
     }
 
-    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [uart, matrix, debouncer, timer, alarm, layout, watchdog])]
+    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [uart0, matrix, debouncer, timer, alarm, layout, watchdog])]
     fn scan_timer_irq(mut c: scan_timer_irq::Context) {
-        let mut uart = c.shared.uart;
+        let mut uart0 = c.shared.uart0;
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
         (timer, alarm).lock(|t, a| {
@@ -279,19 +303,19 @@ mod app {
             byte |= (event.coord().0 & 0b0000_0111) << 4;
             byte |= (event.is_press() as u8) << 7;
             // Watchdog will catch any possibility for an infinite loop
-            while uart.lock(|u| u.uartfr.read().txff().bit_is_set()) {}
-            uart.lock(|u| u.uartdr.write(|w| unsafe { w.data().bits(byte) }));
+            while uart0.lock(|u| u.uartfr.read().txff().bit_is_set()) {}
+            uart0.lock(|u| u.uartdr.write(|w| unsafe { w.data().bits(byte) }));
             handle_event::spawn(Some(event)).unwrap();
         }
         handle_event::spawn(None).unwrap();
     }
 
-    #[task(binds = UART0_IRQ, priority = 4, shared = [uart])]
+    #[task(binds = UART0_IRQ, priority = 4, shared = [uart0])]
     fn rx(mut c: rx::Context) {
         // RX FIFO is disabled so we just check that the byte received is valid
         // and then we read it. If a bad byte is received, it is possible that the
         // receiving side will never read. TODO: fix this
-        if c.shared.uart.lock(|u| {
+        if c.shared.uart0.lock(|u| {
             u.uartmis.read().rxmis().bit_is_set()
                 && u.uartfr.read().rxfe().bit_is_clear()
                 && u.uartdr.read().oe().bit_is_clear()
@@ -299,7 +323,7 @@ mod app {
                 && u.uartdr.read().pe().bit_is_clear()
                 && u.uartdr.read().fe().bit_is_clear()
         }) {
-            let d: u8 = c.shared.uart.lock(|u| u.uartdr.read().data().bits());
+            let d: u8 = c.shared.uart0.lock(|u| u.uartdr.read().data().bits());
             if (d & 0b10000000) > 0 {
                 //handle_event::spawn(Some(Event::Press((d >> 4) & 0b0000_0111, d & 0b0000_1111))).unwrap();
                 handle_event::spawn(Some(Event::Press(0, d & 0b0011_1111))).unwrap();
