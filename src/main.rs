@@ -5,6 +5,7 @@
 #![allow(unused_mut)]
 #![allow(unused_variables)]
 
+mod dbg_msg;
 mod demux_matrix;
 mod layout;
 
@@ -20,8 +21,8 @@ mod app {
     //use cortex_m_rt::entry;
     use defmt_rtt as _;
     use embedded_hal::digital::v2::OutputPin;
-    use embedded_hal::spi::MODE_0;
     use embedded_hal::prelude::_embedded_hal_serial_Write;
+    use embedded_hal::spi::MODE_0;
     use embedded_time::duration::Extensions;
     use embedded_time::rate::Extensions as rate_extensions;
     use panic_probe as _;
@@ -37,19 +38,20 @@ mod app {
         watchdog::Watchdog,
     };
 
-    use core::iter::once;
     use core::fmt::Write;
+    use core::iter::once;
 
-    use keyberon::debounce::Debouncer;
-    use keyberon::layout::{Event, Layout};
-    use keyberon::matrix::PressedKeys;
-    use keyberon::key_code;
+    use crate::dbg_msg::dbg_msg;
     use crate::demux_matrix::DemuxMatrix;
     use crate::layout as kb_layout;
+    use keyberon::debounce::Debouncer;
+    use keyberon::key_code;
+    use keyberon::layout::{Event, Layout};
+    use keyberon::matrix::PressedKeys;
 
+    use smart_leds::{brightness, SmartLedsWrite, RGB8};
     use usb_device::class::UsbClass;
     use usb_device::class_prelude::UsbBusAllocator;
-    use smart_leds::{brightness, SmartLedsWrite, RGB8};
     use ws2812_pio::Ws2812 as Ws2812Pio;
     use ws2812_spi::Ws2812 as Ws2812Spi;
 
@@ -77,7 +79,7 @@ mod app {
         timer: Timer,
         alarm: Alarm0,
         #[lock_free]
-        uart0: rp2040_hal::uart::UartPeripheral<rp2040_hal::uart::Enabled, UART0>,
+        //uart0: rp2040_hal::uart::UartPeripheral<rp2040_hal::uart::Enabled, UART0>,
         uart1: UART1,
         //matrix: Matrix<DynPin, DynPin, 4, 5>,
         #[lock_free]
@@ -136,11 +138,14 @@ mod app {
             )
             .unwrap();
 
+        for i in 0..1 {
+            dbg_msg(&mut uart0, "rtic init");
+        }
+
         //for i in 0..100 {
         //    writeln!(uart0, "zero\r\n").unwrap();
         //    uart0.write_full_blocking(b"one\r\n");
         //}
-
 
         let _spi_sclk = pins.gpio3.into_mode::<FunctionSpi>();
         let _spi_mosi = pins.gpio7.into_mode::<FunctionSpi>();
@@ -173,9 +178,14 @@ mod app {
         );
 
         let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
-        onboard_data[0] = RGB8 { r: 0xFF, g: 0x00, b: 0x00 };
-        onboard.write(brightness(once(onboard_data[0]), 32)).unwrap();
-
+        onboard_data[0] = RGB8 {
+            r: 0xFF,
+            g: 0x00,
+            b: 0x00,
+        };
+        onboard
+            .write(brightness(once(onboard_data[0]), 32))
+            .unwrap();
 
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
@@ -212,13 +222,14 @@ mod app {
             ],
             16,
             //onboard,
+            uart0,
         );
 
         (
             Shared {
                 usb_dev: usb_dev,
                 usb_class: usb_class,
-                uart0: uart0,
+                //uart0: uart0,
                 uart1: uart1,
                 timer: timer,
                 alarm: alarm,
@@ -285,4 +296,3 @@ mod app {
         handle_event::spawn(None).unwrap();
     }
 }
-
