@@ -33,7 +33,7 @@ mod app {
         pio::PIOExt,
         sio::Sio,
         spi::Spi,
-        timer::{Alarm0, Timer},
+        timer::{Alarm0, CountDown, Timer},
         usb::UsbBus,
         watchdog::Watchdog,
     };
@@ -58,7 +58,7 @@ mod app {
     const MATRIX_ROWS: usize = 5;
     const MATRIX_COLS: usize = 16;
     const MATRIX_MUX_COLS: usize = 4;
-    const SCAN_TIME_US: u32 = 1000000;
+    const SCAN_TIME_US: u32 = 1000;
     const EXTERNAL_XTAL_FREQ_HZ: u32 = 12_000_000u32;
     const SYS_HZ: u32 = 125_000_000_u32;
     static mut USB_BUS: Option<UsbBusAllocator<UsbBus>> = None;
@@ -78,15 +78,14 @@ mod app {
         usb_class: keyberon::Class<'static, UsbBus, ()>,
         timer: Timer,
         alarm: Alarm0,
-        #[lock_free]
-        //uart0: rp2040_hal::uart::UartPeripheral<rp2040_hal::uart::Enabled, UART0>,
-        uart1: UART1,
+        uart0: rp2040_hal::uart::UartPeripheral<rp2040_hal::uart::Enabled, UART0>,
         //matrix: Matrix<DynPin, DynPin, 4, 5>,
         #[lock_free]
-        matrix: DemuxMatrix<DynPin, DynPin, 4, 5>,
+        matrix: DemuxMatrix<DynPin, DynPin, 16, 5>,
         layout: Layout,
         #[lock_free]
-        debouncer: Debouncer<PressedKeys<4, 5>>,
+        //debouncer: Debouncer<PressedKeys<4, 5>>,
+        debouncer: Debouncer<PressedKeys<16, 5>>,
         #[lock_free]
         watchdog: Watchdog,
     }
@@ -120,11 +119,9 @@ mod app {
             &mut resets,
         );
 
-        for _ in 0..1000 {
-            cortex_m::asm::nop();
-        }
-
-        let uart1 = c.device.UART1;
+        //for _ in 0..1000 {
+        //    cortex_m::asm::nop();
+        //}
 
         let uart_pins = (
             pins.gpio0.into_mode::<rp2040_hal::gpio::FunctionUart>(),
@@ -138,14 +135,7 @@ mod app {
             )
             .unwrap();
 
-        for i in 0..1 {
-            dbg_msg(&mut uart0, "rtic init");
-        }
-
-        //for i in 0..100 {
-        //    writeln!(uart0, "zero\r\n").unwrap();
-        //    uart0.write_full_blocking(b"one\r\n");
-        //}
+        dbg_msg(&mut uart0, "rtic init");
 
         let _spi_sclk = pins.gpio3.into_mode::<FunctionSpi>();
         let _spi_mosi = pins.gpio7.into_mode::<FunctionSpi>();
@@ -160,32 +150,35 @@ mod app {
         //let mut leds = Leds { caps_lock: onboard };
 
         let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
-        //data[0] = RGB8 { r: 0xFF, g: 0x00, b: 0x00};
-        //under.write(under_data.iter().cloned()).unwrap();
+        for i in 0..10 {
+            under_data[i] = RGB8 { r: 0xFF, g: 0x00, b: 0x00};
+        }
+        under.write(under_data.iter().cloned()).unwrap();
 
         let mut timer = Timer::new(c.device.TIMER, &mut resets);
         let mut alarm = timer.alarm_0().unwrap();
         let _ = alarm.schedule(SCAN_TIME_US.microseconds());
+        alarm.enable_interrupt(&mut timer);
 
         let (mut pio, sm0, _, _, _) = c.device.PIO0.split(&mut resets);
 
-        let mut onboard = Ws2812Pio::new(
-            pins.gpio17.into_mode(),
-            &mut pio,
-            sm0,
-            clocks.peripheral_clock.freq(),
-            timer.count_down(),
-        );
+        //let mut onboard = Ws2812Pio::new(
+        //    pins.gpio17.into_mode(),
+        //    &mut pio,
+        //    sm0,
+        //    clocks.peripheral_clock.freq(),
+        //    timer.count_down(),
+        //);
 
-        let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
-        onboard_data[0] = RGB8 {
-            r: 0xFF,
-            g: 0x00,
-            b: 0x00,
-        };
-        onboard
-            .write(brightness(once(onboard_data[0]), 32))
-            .unwrap();
+        //let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
+        //onboard_data[0] = RGB8 {
+        //    r: 0xFF,
+        //    g: 0x00,
+        //    b: 0x00,
+        //};
+        //onboard
+        //    .write(brightness(once(onboard_data[0]), 32))
+        //    .unwrap();
 
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
@@ -203,7 +196,6 @@ mod app {
         let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, ());
         let usb_dev = keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() });
 
-        alarm.enable_interrupt(&mut timer);
         watchdog.start(10_000.microseconds());
 
         let matrix = DemuxMatrix::new(
@@ -222,15 +214,14 @@ mod app {
             ],
             16,
             //onboard,
-            uart0,
+            //uart0,
         );
 
         (
             Shared {
                 usb_dev: usb_dev,
                 usb_class: usb_class,
-                //uart0: uart0,
-                uart1: uart1,
+                uart0: uart0,
                 timer: timer,
                 alarm: alarm,
                 matrix: matrix.unwrap(),
@@ -254,33 +245,35 @@ mod app {
         });
     }
 
-    #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout])]
-    fn handle_event(mut c: handle_event::Context, event: Option<Event>) {
-        match event {
-            Some(e) => {
-                c.shared.layout.lock(|l| l.event(e));
-                return;
-            }
-            None => match c.shared.layout.lock(|l| l.tick()) {
-                _ => (),
-            },
-        };
-        let report: key_code::KbHidReport = c.shared.layout.lock(|l| l.keycodes().collect());
-        if !c
-            .shared
-            .usb_class
-            .lock(|k| k.device_mut().set_keyboard_report(report.clone()))
-        {
-            return;
-        }
-        if c.shared.usb_dev.lock(|d| d.state()) != usb_device::device::UsbDeviceState::Configured {
-            return;
-        }
-        while let Ok(0) = c.shared.usb_class.lock(|k| k.write(report.as_bytes())) {}
-    }
+    //#[task(priority = 2, capacity = 8, shared = [/*uart0,*/ usb_dev, usb_class, layout])]
+    //fn handle_event(mut c: handle_event::Context, event: Option<Event>) {
+    //    //c.shared.uart0.lock(|u| { writeln!(u, "{:?}\r\n", "handle_event").unwrap() });
+    //    match event {
+    //        Some(e) => {
+    //            c.shared.layout.lock(|l| l.event(e));
+    //            return;
+    //        }
+    //        None => match c.shared.layout.lock(|l| l.tick()) {
+    //            _ => (),
+    //        },
+    //    };
+    //    let report: key_code::KbHidReport = c.shared.layout.lock(|l| l.keycodes().collect());
+    //    if !c
+    //        .shared
+    //        .usb_class
+    //        .lock(|k| k.device_mut().set_keyboard_report(report.clone()))
+    //    {
+    //        return;
+    //    }
+    //    if c.shared.usb_dev.lock(|d| d.state()) != usb_device::device::UsbDeviceState::Configured {
+    //        return;
+    //    }
+    //    while let Ok(0) = c.shared.usb_class.lock(|k| k.write(report.as_bytes())) {}
+    //}
 
-    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [matrix, debouncer, timer, alarm, layout, watchdog])]
+    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [uart0, matrix, debouncer, timer, alarm, layout, watchdog, usb_dev, usb_class])]
     fn scan_timer_irq(mut c: scan_timer_irq::Context) {
+        //c.shared.uart0.lock(|u| { writeln!(u, "{:?}\r\n", "scan_timer_irq").unwrap() });
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
         (timer, alarm).lock(|t, a| {
@@ -291,8 +284,39 @@ mod app {
         c.shared.watchdog.feed();
 
         for event in c.shared.debouncer.events(c.shared.matrix.get().unwrap()) {
-            handle_event::spawn(Some(event)).unwrap();
+            //handle_event::spawn(Some(event)).unwrap();
+            c.shared.layout.lock(|l| l.event(event));
+            c.shared
+                .uart0
+                .lock(|u| writeln!(u, "{:?}\r\n", "eventttttt").unwrap());
         }
-        handle_event::spawn(None).unwrap();
+
+        let layout = c.shared.layout;
+        let usb_class = c.shared.usb_class;
+        let usb_dev = c.shared.usb_dev;
+
+        (layout, usb_class, usb_dev).lock(|l, uc, ud| {
+            l.tick();
+            let report: key_code::KbHidReport = l.keycodes().collect();
+            if uc.device_mut().set_keyboard_report(report.clone()) {
+                while let Ok(0) = uc.write(report.as_bytes()) {}
+            }
+        });
+        
+        //c.shared.layout.lock(|l| l.tick());
+        //let report: key_code::KbHidReport = c.shared.layout.lock(|l| l.keycodes().collect());
+        //if !c
+        //    .shared
+        //    .usb_class
+        //    .lock(|k| k.device_mut().set_keyboard_report(report.clone()))
+        //{
+        //    return;
+        //}
+        //if c.shared.usb_dev.lock(|d| d.state()) != usb_device::device::UsbDeviceState::Configured {
+        //    return;
+        //}
+        //while let Ok(0) = c.shared.usb_class.lock(|k| k.write(report.as_bytes())) {}
+
+        //handle_event::spawn(None).unwrap();
     }
 }
