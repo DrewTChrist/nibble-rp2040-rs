@@ -8,7 +8,7 @@ This is a firmware created with [keyberon](https://github.com/TeXitoi/keyberon) 
 
 1. [Installation](#installation)
 2. [Usage](#usage)
-3. [Build Photos](#build photos)
+3. [Build Photos](#buildphotos)
 
 ## Features (Lack of)
 * Currently there is no OLED support
