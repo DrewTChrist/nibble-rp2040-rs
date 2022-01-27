@@ -596,9 +596,8 @@ dependencies = [
 
 [[package]]
 name = "rp2040-hal"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4cc5eed93ae7e2432580923fc5d5797c14b2bf215e1ab84e828f211881393b9"
+version = "0.4.0"
+source = "git+https://github.com/rp-rs/rp-hal.git#c180e7867b9463793c993a05e792c8ffb690d870"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -766,8 +765,6 @@ dependencies = [
 [[package]]
 name = "ws2812-pio"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a24c81043be3852aa2cfd3f4f0e3a768eee032199816d5da44cacf9ef84c366"
 dependencies = [
  "cortex-m",
  "embedded-hal",

@@ -3,7 +3,6 @@
 #![allow(unused_imports)]
 #![allow(unused_mut)]
 
-mod dbg_msg;
 mod demux_matrix;
 mod layout;
 
@@ -26,8 +25,8 @@ mod app {
     use rp2040_hal::{
         clocks::{init_clocks_and_plls, Clock},
         gpio::{bank0::*, dynpin::DynPin, FunctionSpi, Pin, PushPullOutput},
-        pac::{UART0, UART1, SPI0},
-        pio::PIOExt,
+        pac::{UART0, UART1, SPI0, PIO0},
+        pio::{PIOExt, SM0},
         sio::Sio,
         spi::{Enabled, Spi},
         timer::{Alarm0, CountDown, Timer},
@@ -48,7 +47,7 @@ mod app {
     use smart_leds::{brightness, SmartLedsWrite, RGB8};
     use usb_device::class::UsbClass;
     use usb_device::class_prelude::UsbBusAllocator;
-    use ws2812_pio::Ws2812 as Ws2812Pio;
+    use ws2812_pio::Ws2812Direct as Ws2812Pio;
     use ws2812_spi::Ws2812 as Ws2812Spi;
 
     const SCAN_TIME_US: u32 = 1000;
@@ -57,10 +56,38 @@ mod app {
     static mut USB_BUS: Option<UsbBusAllocator<UsbBus>> = None;
 
     pub struct Leds {
+        caps_lock: Ws2812Pio<PIO0, SM0, Gpio17>,
     }
 
     impl keyberon::keyboard::Leds for Leds {
-        fn caps_lock(&mut self, _status: bool) {}
+        fn caps_lock(&mut self, status: bool) {
+            if status {
+                let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
+                onboard_data[0] = RGB8 {
+                    r: 0xFF,
+                    g: 0x00,
+                    b: 0x00,
+                };
+                self.caps_lock.write(brightness(once(onboard_data[0]), 32)).unwrap();
+            } else {
+                let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
+                self.caps_lock.write(brightness(once(onboard_data[0]), 32)).unwrap();
+            }
+        }
+        fn compose(&mut self, status: bool) {
+            if status {
+                let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
+                onboard_data[0] = RGB8 {
+                    r: 0xFF,
+                    g: 0x00,
+                    b: 0xFF,
+                };
+                self.caps_lock.write(brightness(once(onboard_data[0]), 32)).unwrap();
+            } else {
+                let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
+                self.caps_lock.write(brightness(once(onboard_data[0]), 32)).unwrap();
+            }
+        }
     }
 
     #[shared]
@@ -68,8 +95,8 @@ mod app {
         underglow: Ws2812Spi<Spi<Enabled, SPI0, 8>>, 
         underglow_state: bool,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
-        //usb_class: keyberon::Class<'static, UsbBus, Leds>,
-        usb_class: keyberon::Class<'static, UsbBus, ()>,
+        usb_class: keyberon::Class<'static, UsbBus, Leds>,
+        //usb_class: keyberon::Class<'static, UsbBus, ()>,
         timer: Timer,
         alarm: Alarm0,
         #[lock_free]
@@ -149,27 +176,16 @@ mod app {
         let _ = alarm.schedule(SCAN_TIME_US.microseconds());
         alarm.enable_interrupt(&mut timer);
 
-        let (mut _pio, _sm0, _, _, _) = c.device.PIO0.split(&mut resets);
+        let (mut pio, sm0, _, _, _) = c.device.PIO0.split(&mut resets);
 
-        //let mut onboard = Ws2812Pio::new(
-        //    pins.gpio17.into_mode(),
-        //    &mut pio,
-        //    sm0,
-        //    clocks.peripheral_clock.freq(),
-        //    timer.count_down(),
-        //);
+        let mut onboard = Ws2812Pio::new(
+            pins.gpio17.into_mode(),
+            &mut pio,
+            sm0,
+            clocks.peripheral_clock.freq(),
+        );
 
-        //let mut leds = Leds { caps_lock: onboard };
-
-        //let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
-        //onboard_data[0] = RGB8 {
-        //    r: 0xFF,
-        //    g: 0x00,
-        //    b: 0x00,
-        //};
-        //onboard
-        //    .write(brightness(once(onboard_data[0]), 32))
-        //    .unwrap();
+        let mut leds = Leds { caps_lock: onboard };
 
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
@@ -183,8 +199,8 @@ mod app {
             USB_BUS = Some(usb_bus);
         }
 
-        //let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, leds);
-        let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, ());
+        let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, leds);
+        //let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, ());
         let usb_dev = keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() });
 
         watchdog.start(10_000.microseconds());
