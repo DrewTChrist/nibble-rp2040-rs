@@ -3,6 +3,7 @@
 #![allow(unused_imports)]
 #![allow(unused_mut)]
 
+mod encoder;
 mod demux_matrix;
 mod layout;
 
@@ -37,6 +38,7 @@ mod app {
     use core::fmt::Write;
     use core::iter::once;
 
+    use crate::encoder::Encoder;
     use crate::demux_matrix::DemuxMatrix;
     use crate::layout as kb_layout;
     use keyberon::debounce::Debouncer;
@@ -90,23 +92,14 @@ mod app {
         }
     }
 
-    pub struct Encoder {
-        pub value: u8,
-        pub state: u8,
-        pub pulses: u8,
-        pub resolution: u8,
-    }
-
     #[shared]
     struct Shared {
         #[lock_free]
         underglow: Ws2812Spi<Spi<Enabled, SPI0, 8>>, 
         underglow_state: bool,
-        encoder_a: Pin<Gpio8, PullUpInput>,
-        encoder_b: Pin<Gpio9, PullUpInput>,
+        encoder: Encoder,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         usb_class: keyberon::Class<'static, UsbBus, Leds>,
-        //usb_class: keyberon::Class<'static, UsbBus, ()>,
         timer: Timer,
         alarm: Alarm0,
         #[lock_free]
@@ -177,6 +170,7 @@ mod app {
 
         let mut encoder_a = pins.gpio8.into_pull_up_input();
         let mut encoder_b = pins.gpio9.into_pull_up_input();
+        let mut encoder = Encoder::new(encoder_a, encoder_b);
 
         let mut timer = Timer::new(c.device.TIMER, &mut resets);
         let mut alarm = timer.alarm_0().unwrap();
@@ -207,7 +201,6 @@ mod app {
         }
 
         let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, leds);
-        //let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, ());
         let usb_dev = keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() });
 
         watchdog.start(10_000.microseconds());
@@ -227,15 +220,13 @@ mod app {
                 pins.gpio4.into_pull_up_input().into(),
             ],
             16,
-            //onboard,
         );
 
         (
             Shared {
                 underglow: underglow,
                 underglow_state: underglow_state,
-                encoder_a: encoder_a,
-                encoder_b: encoder_b,
+                encoder: encoder,
                 usb_dev: usb_dev,
                 usb_class: usb_class,
                 timer: timer,
@@ -261,7 +252,7 @@ mod app {
         });
     }
 
-    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [encoder_a, encoder_b, underglow, underglow_state, matrix, debouncer, timer, alarm, layout, watchdog, usb_dev, usb_class])]
+    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [encoder, underglow, underglow_state, matrix, debouncer, timer, alarm, layout, watchdog, usb_dev, usb_class])]
     fn scan_timer_irq(mut c: scan_timer_irq::Context) {
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
@@ -303,33 +294,18 @@ mod app {
             },
             //_ => (),
             _ => {
-                (c.shared.encoder_a, c.shared.encoder_b).lock(|enc_a, enc_b| {
-                    if enc_a.is_low().unwrap() && enc_b.is_high().unwrap() {
+                c.shared.encoder.lock(|e| {
+                    let val = e.read();
+                    if val == -1 {
                         layout.lock(|l| l.event(Event::Press(3, 14)));
                         layout.lock(|l| l.event(Event::Release(3, 14)));
-                    } else if enc_b.is_low().unwrap() && enc_a.is_high().unwrap() {
+                    } else if val == 1 {
                         layout.lock(|l| l.event(Event::Press(4, 14)));
                         layout.lock(|l| l.event(Event::Release(4, 14)));
                     }
                 });
             },
         }
-
-        //(c.shared.encoder_a, c.shared.encoder_b).lock(|enc_a, enc_b| {
-        //    if enc_a.is_low().unwrap() && enc_b.is_high().unwrap() {
-        //        let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
-        //        for i in 0..10 {
-        //            under_data[i] = RGB8 { r: 0xFF, g: 0x00, b: 0x00};
-        //        }
-        //        underglow.write(under_data.iter().cloned()).unwrap();
-        //    } else if enc_b.is_low().unwrap() && enc_a.is_high().unwrap() {
-        //        let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
-        //        for i in 0..10 {
-        //            under_data[i] = RGB8 { r: 0x00, g: 0xFF, b: 0x00};
-        //        }
-        //        underglow.write(under_data.iter().cloned()).unwrap();
-        //    }
-        //});
 
         let report: key_code::KbHidReport = layout.lock(|l| l.keycodes().collect());
         if usb_class.lock(|k| k.device_mut().set_keyboard_report(report.clone())) {
