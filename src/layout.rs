@@ -14,9 +14,11 @@ macro_rules! s {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum CustomActions {
     Underglow,
+    Bootloader,
 }
 
 const UNDERGLOW: Action<CustomActions> = Action::Custom(CustomActions::Underglow);
+const BOOTLOADER: Action<CustomActions> = Action::Custom(CustomActions::Bootloader);
 const COPY: Action<CustomActions> = m(&[LCtrl, C]);
 const PASTE: Action<CustomActions> = m(&[LCtrl, V]);
 
@@ -32,7 +34,7 @@ pub static LAYERS: keyberon::layout::Layers<CustomActions> = &[
     ], 
     &[
         &[k(No),           k(Escape),   k(F1),   k(F2),   k(F3),    k(F4),    k(F5),    k(F6),    k(F7),    k(F8),    k(F9),     k(F10),    k(F11),      k(F12),      k(BSpace), UNDERGLOW],
-        &[k(No),           k(Tab),      k(Q),    k(W),    k(E),     k(R),     k(T),     k(Y),     k(U),     k(I),     k(O),      k(P),      k(LBracket), k(RBracket), k(Bslash), k(Delete)],
+        &[k(No),           k(Tab),      k(Q),    k(W),    k(E),     k(R),     k(T),     k(Y),     k(U),     k(I),     k(O),      k(P),      k(LBracket), k(RBracket), k(Bslash), BOOTLOADER],
         &[k(No),           k(CapsLock), k(A),    k(S),    k(D),     k(F),     k(G),     k(H),     k(J),     k(K),     k(L),      k(SColon), k(Quote),    k(No),       k(Enter),  k(PgUp)],
         &[DefaultLayer(0), k(LShift),   k(Z),    k(X),    k(C),     k(V),     k(B),     k(N),     k(M),     k(Comma), k(Dot),    k(Slash),  k(LShift),   k(No),       k(Up),     k(PgDown)],
         &[DefaultLayer(2), k(LCtrl),    k(LGui), k(LAlt), k(No),    k(No),    k(Space), k(No),    k(No),    k(RAlt),  k(RCtrl),  k(RGui),   k(Left),     k(No),       k(Down),   k(Right)],

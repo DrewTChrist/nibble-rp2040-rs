@@ -23,6 +23,7 @@ mod app {
     use embedded_time::duration::Extensions;
     use embedded_time::rate::Extensions as rate_extensions;
     use panic_probe as _;
+    use rp2040_hal;
     use rp2040_hal::{
         clocks::{init_clocks_and_plls, Clock},
         gpio::{bank0::*, dynpin::DynPin, FunctionSpi, Pin, PushPullOutput, PullUpInput},
@@ -290,6 +291,9 @@ mod app {
                             *us = true;
                         }
                     });
+                },
+                kb_layout::CustomActions::Bootloader => {
+                    rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
                 },
             },
             //_ => (),
