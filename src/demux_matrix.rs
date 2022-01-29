@@ -1,10 +1,7 @@
 use core::convert::TryInto;
-use core::str;
 use cortex_m;
 use embedded_hal::digital::v2::{InputPin, OutputPin, PinState};
-use embedded_hal::timer::CountDown;
 use keyberon::matrix::PressedKeys;
-use rp2040_hal::pac::UART0;
 
 pub struct DemuxMatrix<C, R, const CS: usize, const RS: usize>
 where

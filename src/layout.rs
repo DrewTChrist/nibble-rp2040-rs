@@ -1,5 +1,5 @@
 //use keyberon::action::Action::Trans;
-use keyberon::action::{self, Action, Action::*, k, l, m};
+use keyberon::action::{Action, Action::*, k, l, m};
 use keyberon::key_code::KeyCode::*;
 #[allow(unused_macros)]
 

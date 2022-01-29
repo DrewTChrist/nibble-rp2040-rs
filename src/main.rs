@@ -1,7 +1,5 @@
 #![no_std]
 #![no_main]
-#![allow(unused_imports)]
-#![allow(unused_mut)]
 
 mod encoder;
 mod demux_matrix;
@@ -17,8 +15,6 @@ mod app {
         _embedded_hal_watchdog_Watchdog, _embedded_hal_watchdog_WatchdogEnable,
     };
     use defmt_rtt as _;
-    use embedded_hal::digital::v2::{InputPin, OutputPin};
-    use embedded_hal::prelude::_embedded_hal_serial_Write;
     use embedded_hal::spi::MODE_0;
     use embedded_time::duration::Extensions;
     use embedded_time::rate::Extensions as rate_extensions;
@@ -26,17 +22,16 @@ mod app {
     use rp2040_hal;
     use rp2040_hal::{
         clocks::{init_clocks_and_plls, Clock},
-        gpio::{bank0::*, dynpin::DynPin, FunctionSpi, Pin, PushPullOutput, PullUpInput},
-        pac::{UART0, UART1, SPI0, PIO0},
+        gpio::{bank0::*, dynpin::DynPin, FunctionSpi},
+        pac::{SPI0, PIO0},
         pio::{PIOExt, SM0},
         sio::Sio,
         spi::{Enabled, Spi},
-        timer::{Alarm0, CountDown, Timer},
+        timer::{Alarm0, Timer},
         usb::UsbBus,
         watchdog::Watchdog,
     };
 
-    use core::fmt::Write;
     use core::iter::once;
 
     use crate::encoder::Encoder;
@@ -73,21 +68,7 @@ mod app {
                 };
                 self.caps_lock.write(brightness(once(onboard_data[0]), 32)).unwrap();
             } else {
-                let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
-                self.caps_lock.write(brightness(once(onboard_data[0]), 32)).unwrap();
-            }
-        }
-        fn compose(&mut self, status: bool) {
-            if status {
-                let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
-                onboard_data[0] = RGB8 {
-                    r: 0xFF,
-                    g: 0x00,
-                    b: 0xFF,
-                };
-                self.caps_lock.write(brightness(once(onboard_data[0]), 32)).unwrap();
-            } else {
-                let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
+                let onboard_data: [RGB8; 1] = [RGB8::default(); 1];
                 self.caps_lock.write(brightness(once(onboard_data[0]), 32)).unwrap();
             }
         }
@@ -116,7 +97,7 @@ mod app {
     struct Local {}
 
     #[init]
-    fn init(mut c: init::Context) -> (Shared, Local, init::Monotonics) {
+    fn init(c: init::Context) -> (Shared, Local, init::Monotonics) {
         let mut resets = c.device.RESETS;
         let mut watchdog = Watchdog::new(c.device.WATCHDOG);
         watchdog.pause_on_debug(false);
@@ -141,22 +122,6 @@ mod app {
             &mut resets,
         );
 
-        //for _ in 0..1000 {
-        //    cortex_m::asm::nop();
-        //}
-
-        //let uart_pins = (
-        //    pins.gpio0.into_mode::<rp2040_hal::gpio::FunctionUart>(),
-        //    pins.gpio1.into_mode::<rp2040_hal::gpio::FunctionUart>(),
-        //);
-
-        //let mut uart0 = rp2040_hal::uart::UartPeripheral::<_, _>::new(c.device.UART0, &mut resets)
-        //    .enable(
-        //        rp2040_hal::uart::common_configs::_9600_8_N_1,
-        //        clocks.peripheral_clock.freq().into(),
-        //    )
-        //    .unwrap();
-
         let _spi_sclk = pins.gpio3.into_mode::<FunctionSpi>();
         let _spi_mosi = pins.gpio7.into_mode::<FunctionSpi>();
         let spi = Spi::<_, _, 8>::new(c.device.SPI0).init(
@@ -166,12 +131,12 @@ mod app {
             &MODE_0,
         );
 
-        let mut underglow = Ws2812Spi::new(spi);
-        let mut underglow_state: bool = false;
+        let underglow = Ws2812Spi::new(spi);
+        let underglow_state: bool = false;
 
-        let mut encoder_a = pins.gpio8.into_pull_up_input();
-        let mut encoder_b = pins.gpio9.into_pull_up_input();
-        let mut encoder = Encoder::new(encoder_a, encoder_b);
+        let encoder_a = pins.gpio8.into_pull_up_input();
+        let encoder_b = pins.gpio9.into_pull_up_input();
+        let encoder = Encoder::new(encoder_a, encoder_b);
 
         let mut timer = Timer::new(c.device.TIMER, &mut resets);
         let mut alarm = timer.alarm_0().unwrap();
@@ -180,14 +145,14 @@ mod app {
 
         let (mut pio, sm0, _, _, _) = c.device.PIO0.split(&mut resets);
 
-        let mut onboard = Ws2812Pio::new(
+        let onboard = Ws2812Pio::new(
             pins.gpio17.into_mode(),
             &mut pio,
             sm0,
             clocks.peripheral_clock.freq(),
         );
 
-        let mut leds = Leds { caps_lock: onboard };
+        let leds = Leds { caps_lock: onboard };
 
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
@@ -243,7 +208,7 @@ mod app {
     }
 
     #[task(binds = USBCTRL_IRQ, priority = 2, shared = [usb_dev, usb_class])]
-    fn usb_rx(mut c: usb_rx::Context) {
+    fn usb_rx(c: usb_rx::Context) {
         let usb = c.shared.usb_dev;
         let kb = c.shared.usb_class;
         (usb, kb).lock(|usb, kb| {
@@ -259,7 +224,7 @@ mod app {
         let alarm = c.shared.alarm;
         let mut layout = c.shared.layout;
         let mut usb_class = c.shared.usb_class;
-        let mut underglow = c.shared.underglow;
+        let underglow = c.shared.underglow;
 
         (timer, alarm).lock(|t, a| {
             a.clear_interrupt(t);
@@ -275,11 +240,9 @@ mod app {
         match layout.lock(|l| l.tick()) {
             CustomEvent::Press(e) => match e {
                 kb_layout::CustomActions::Underglow => {
-                    // /*c.shared.underglow,*/ c.shared.underglow_state.lock(|/*u, */us| {
                     c.shared.underglow_state.lock(|us| {
                         if *us {
-                            let mut off: [RGB8; 10] = [RGB8::default(); 10];
-                            //u.write(off.iter().cloned()).unwrap();
+                            let off: [RGB8; 10] = [RGB8::default(); 10];
                             underglow.write(off.iter().cloned()).unwrap();
                             *us = false;
                         } else {
