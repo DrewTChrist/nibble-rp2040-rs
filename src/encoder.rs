@@ -22,7 +22,7 @@ impl Encoder {
             value: 0,
             state: 0, 
             pulses: 0,
-            resolution: 20,
+            resolution: 4,
         };
         s.init_state();
         s
