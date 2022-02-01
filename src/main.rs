@@ -15,18 +15,15 @@ mod app {
         _embedded_hal_watchdog_Watchdog, _embedded_hal_watchdog_WatchdogEnable,
     };
     use defmt_rtt as _;
-    use embedded_hal::spi::MODE_0;
     use embedded_time::duration::Extensions;
-    use embedded_time::rate::Extensions as rate_extensions;
     use panic_probe as _;
     use rp2040_hal;
     use rp2040_hal::{
         clocks::{init_clocks_and_plls, Clock},
-        gpio::{bank0::*, dynpin::DynPin, FunctionSpi},
-        pac::{SPI0, PIO0},
-        pio::{PIOExt, SM0},
+        gpio::{bank0::*, dynpin::DynPin},
+        pac::{PIO0},
+        pio::{PIOExt, SM0, SM1},
         sio::Sio,
-        spi::{Enabled, Spi},
         timer::{Alarm0, Timer},
         usb::UsbBus,
         watchdog::Watchdog,
@@ -46,11 +43,9 @@ mod app {
     use usb_device::class::UsbClass;
     use usb_device::class_prelude::UsbBusAllocator;
     use ws2812_pio::Ws2812Direct as Ws2812Pio;
-    use ws2812_spi::Ws2812 as Ws2812Spi;
 
     const SCAN_TIME_US: u32 = 1000;
     const EXTERNAL_XTAL_FREQ_HZ: u32 = 12_000_000u32;
-    const SYS_HZ: u32 = 125_000_000_u32;
     static mut USB_BUS: Option<UsbBusAllocator<UsbBus>> = None;
 
     pub struct Leds {
@@ -77,7 +72,7 @@ mod app {
     #[shared]
     struct Shared {
         #[lock_free]
-        underglow: Ws2812Spi<Spi<Enabled, SPI0, 8>>, 
+        underglow: Ws2812Pio<PIO0, SM1, Gpio7>,
         underglow_state: bool,
         encoder: Encoder,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
@@ -122,16 +117,6 @@ mod app {
             &mut resets,
         );
 
-        let _spi_sclk = pins.gpio3.into_mode::<FunctionSpi>();
-        let _spi_mosi = pins.gpio7.into_mode::<FunctionSpi>();
-        let spi = Spi::<_, _, 8>::new(c.device.SPI0).init(
-            &mut resets,
-            SYS_HZ.Hz(),
-            3_000_000u32.Hz(),
-            &MODE_0,
-        );
-
-        let underglow = Ws2812Spi::new(spi);
         let underglow_state: bool = false;
 
         let encoder_a = pins.gpio8.into_pull_up_input();
@@ -143,12 +128,19 @@ mod app {
         let _ = alarm.schedule(SCAN_TIME_US.microseconds());
         alarm.enable_interrupt(&mut timer);
 
-        let (mut pio, sm0, _, _, _) = c.device.PIO0.split(&mut resets);
+        let (mut pio, sm0, sm1, _, _) = c.device.PIO0.split(&mut resets);
 
         let onboard = Ws2812Pio::new(
             pins.gpio17.into_mode(),
             &mut pio,
             sm0,
+            clocks.peripheral_clock.freq(),
+        );
+
+        let underglow = Ws2812Pio::new(
+            pins.gpio7.into_mode(),
+            &mut pio,
+            sm1,
             clocks.peripheral_clock.freq(),
         );
 

@@ -76,7 +76,7 @@ where
 
         for current_col in 0..self.true_cols {
             self.select_column(current_col);
-            cortex_m::asm::delay(5000);
+            cortex_m::asm::delay(2500);
             for (ri, row) in (&mut self.rows).iter_mut().enumerate() {
                 if !row.is_high()? {
                     keys.0[ri][current_col] = true;
