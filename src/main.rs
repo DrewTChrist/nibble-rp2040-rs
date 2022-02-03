@@ -36,7 +36,7 @@ mod app {
     use crate::layout as kb_layout;
     use keyberon::debounce::Debouncer;
     use keyberon::key_code;
-    use keyberon::layout::{CustomEvent, Event, Layout};
+    use keyberon::layout::{CustomEvent, Layout};
     use keyberon::matrix::PressedKeys;
 
     use smart_leds::{brightness, SmartLedsWrite, RGB8};
@@ -262,17 +262,14 @@ mod app {
             //_ => (),
             _ => {
                 c.shared.encoder.lock(|e| {
-                    for event in e.read_events().unwrap() {
-                        layout.lock(|l| l.event(event));
+                    match e.read_events() {
+                        Some(events) => {
+                            for event in events {
+                                layout.lock(|l| l.event(event));
+                            }
+                        },
+                        None => {},
                     }
-                    //let val = e.read();
-                    //if val == -1 {
-                    //    layout.lock(|l| l.event(Event::Press(3, 14)));
-                    //    layout.lock(|l| l.event(Event::Release(3, 14)));
-                    //} else if val == 1 {
-                    //    layout.lock(|l| l.event(Event::Press(4, 14)));
-                    //    layout.lock(|l| l.event(Event::Release(4, 14)));
-                    //}
                 });
             }
         }
