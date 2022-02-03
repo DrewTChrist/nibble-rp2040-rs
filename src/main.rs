@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 
-mod encoder;
 mod demux_matrix;
+mod encoder;
 mod layout;
 
 #[link_section = ".boot2"]
@@ -21,7 +21,7 @@ mod app {
     use rp2040_hal::{
         clocks::{init_clocks_and_plls, Clock},
         gpio::{bank0::*, dynpin::DynPin},
-        pac::{PIO0},
+        pac::PIO0,
         pio::{PIOExt, SM0, SM1},
         sio::Sio,
         timer::{Alarm0, Timer},
@@ -31,8 +31,8 @@ mod app {
 
     use core::iter::once;
 
-    use crate::encoder::Encoder;
     use crate::demux_matrix::DemuxMatrix;
+    use crate::encoder::Encoder;
     use crate::layout as kb_layout;
     use keyberon::debounce::Debouncer;
     use keyberon::key_code;
@@ -61,10 +61,14 @@ mod app {
                     g: 0x00,
                     b: 0x00,
                 };
-                self.caps_lock.write(brightness(once(onboard_data[0]), 32)).unwrap();
+                self.caps_lock
+                    .write(brightness(once(onboard_data[0]), 32))
+                    .unwrap();
             } else {
                 let onboard_data: [RGB8; 1] = [RGB8::default(); 1];
-                self.caps_lock.write(brightness(once(onboard_data[0]), 32)).unwrap();
+                self.caps_lock
+                    .write(brightness(once(onboard_data[0]), 32))
+                    .unwrap();
             }
         }
     }
@@ -121,7 +125,7 @@ mod app {
 
         let encoder_a = pins.gpio8.into_pull_up_input();
         let encoder_b = pins.gpio9.into_pull_up_input();
-        let encoder = Encoder::new(encoder_a, encoder_b);
+        let encoder = Encoder::new(encoder_a, encoder_b, (3, 14), (4, 14));
 
         let mut timer = Timer::new(c.device.TIMER, &mut resets);
         let mut alarm = timer.alarm_0().unwrap();
@@ -240,30 +244,37 @@ mod app {
                         } else {
                             let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
                             for i in 0..10 {
-                                under_data[i] = RGB8 { r: 0xFF, g: 0x00, b: 0xFF};
+                                under_data[i] = RGB8 {
+                                    r: 0xFF,
+                                    g: 0x00,
+                                    b: 0xFF,
+                                };
                             }
                             underglow.write(under_data.iter().cloned()).unwrap();
                             *us = true;
                         }
                     });
-                },
+                }
                 kb_layout::CustomActions::Bootloader => {
                     rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
-                },
+                }
             },
             //_ => (),
             _ => {
                 c.shared.encoder.lock(|e| {
-                    let val = e.read();
-                    if val == -1 {
-                        layout.lock(|l| l.event(Event::Press(3, 14)));
-                        layout.lock(|l| l.event(Event::Release(3, 14)));
-                    } else if val == 1 {
-                        layout.lock(|l| l.event(Event::Press(4, 14)));
-                        layout.lock(|l| l.event(Event::Release(4, 14)));
+                    for event in e.read_events().unwrap() {
+                        layout.lock(|l| l.event(event));
                     }
+                    //let val = e.read();
+                    //if val == -1 {
+                    //    layout.lock(|l| l.event(Event::Press(3, 14)));
+                    //    layout.lock(|l| l.event(Event::Release(3, 14)));
+                    //} else if val == 1 {
+                    //    layout.lock(|l| l.event(Event::Press(4, 14)));
+                    //    layout.lock(|l| l.event(Event::Release(4, 14)));
+                    //}
                 });
-            },
+            }
         }
 
         let report: key_code::KbHidReport = layout.lock(|l| l.keycodes().collect());

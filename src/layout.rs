@@ -1,8 +1,7 @@
 //use keyberon::action::Action::Trans;
-use keyberon::action::{Action, Action::*, k, l, m};
+use keyberon::action::{k, l, m, Action, Action::*};
 use keyberon::key_code::KeyCode::*;
 #[allow(unused_macros)]
-
 
 // Shift + KeyCode
 macro_rules! s {
