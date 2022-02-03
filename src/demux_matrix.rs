@@ -56,13 +56,11 @@ where
             let state: u8 = ((col & (0b1 << bit)) >> bit).try_into().unwrap();
             if state == 0 {
                 match self.cols[bit].set_state(PinState::Low) {
-                    Ok(()) => {}
-                    _ => {}
+                    _ => (),
                 }
             } else if state == 1 {
                 match self.cols[bit].set_state(PinState::High) {
-                    Ok(()) => {}
-                    _ => {}
+                    _ => (),
                 }
             }
         }
@@ -76,11 +74,9 @@ where
 
         for current_col in 0..self.true_cols {
             self.select_column(current_col);
-            cortex_m::asm::delay(2500);
+            cortex_m::asm::delay(5000);
             for (ri, row) in (&mut self.rows).iter_mut().enumerate() {
-                if !row.is_high()? {
-                    keys.0[ri][current_col] = true;
-                } 
+                keys.0[ri][current_col] = row.is_low()?;
             }
         }
         Ok(keys)

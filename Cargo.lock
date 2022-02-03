@@ -376,7 +376,6 @@ dependencies = [
  "smart-leds-trait",
  "usb-device",
  "ws2812-pio",
- "ws2812-spi",
 ]
 
 [[package]]
@@ -772,16 +771,5 @@ dependencies = [
  "nb 1.0.0",
  "pio",
  "rp2040-hal",
- "smart-leds-trait",
-]
-
-[[package]]
-name = "ws2812-spi"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaa00b1cde2c2c861e7cc13a4925598dd86b4690e39c5b77308198df5384b8db"
-dependencies = [
- "embedded-hal",
- "nb 0.1.3",
  "smart-leds-trait",
 ]
