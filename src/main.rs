@@ -36,12 +36,13 @@ mod app {
     use crate::layout as kb_layout;
     use keyberon::debounce::Debouncer;
     use keyberon::key_code;
-    use keyberon::layout::{CustomEvent, Layout};
+    use keyberon::layout::{CustomEvent, Event, Layout};
     use keyberon::matrix::PressedKeys;
 
     use smart_leds::{brightness, SmartLedsWrite, RGB8};
     use usb_device::class::UsbClass;
     use usb_device::class_prelude::UsbBusAllocator;
+    use usb_device::device::UsbDeviceState;
     use ws2812_pio::Ws2812Direct as Ws2812Pio;
 
     const SCAN_TIME_US: u32 = 1000;
@@ -203,7 +204,7 @@ mod app {
         )
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 2, shared = [usb_dev, usb_class])]
+    #[task(binds = USBCTRL_IRQ, priority = 3, shared = [usb_dev, usb_class])]
     fn usb_rx(c: usb_rx::Context) {
         let usb = c.shared.usb_dev;
         let kb = c.shared.usb_class;
@@ -214,13 +215,72 @@ mod app {
         });
     }
 
-    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [encoder, underglow, underglow_state, matrix, debouncer, timer, alarm, layout, watchdog, usb_dev, usb_class])]
-    fn scan_timer_irq(mut c: scan_timer_irq::Context) {
+    #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout, underglow, underglow_state, encoder])]
+    fn handle_event(mut c: handle_event::Context, event: Option<Event>) {
+        let mut layout = c.shared.layout;
+        let underglow = c.shared.underglow;
+        match event {
+            None => match layout.lock(|l| l.tick()) {
+                CustomEvent::Press(event) => match event {
+                    kb_layout::CustomActions::Underglow => {
+                        c.shared.underglow_state.lock(|us| {
+                            if *us {
+                                let off: [RGB8; 10] = [RGB8::default(); 10];
+                                underglow.write(off.iter().cloned()).unwrap();
+                                *us = false;
+                            } else {
+                                let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
+                                for i in 0..10 {
+                                    under_data[i] = RGB8 {
+                                        r: 0xFF,
+                                        g: 0x00,
+                                        b: 0xFF,
+                                    };
+                                }
+                                underglow.write(under_data.iter().cloned()).unwrap();
+                                *us = true;
+                            }
+                        });
+                    }
+                    kb_layout::CustomActions::Bootloader => {
+                        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+                    }
+                },
+                _ => (),
+            },
+            Some(e) => {
+                layout.lock(|l| l.event(e));
+                return;
+            }
+        }
+
+        c.shared.encoder.lock(|e| match e.read_events() {
+            Some(events) => {
+                for event in events {
+                    layout.lock(|l| l.event(event));
+                }
+            }
+            None => {}
+        });
+
+        let report: key_code::KbHidReport = layout.lock(|l| l.keycodes().collect());
+        if !c
+            .shared
+            .usb_class
+            .lock(|k| k.device_mut().set_keyboard_report(report.clone()))
+        {
+            return;
+        }
+        if c.shared.usb_dev.lock(|d| d.state()) != UsbDeviceState::Configured {
+            return;
+        }
+        while let Ok(0) = c.shared.usb_class.lock(|k| k.write(report.as_bytes())) {}
+    }
+
+    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [matrix, debouncer, timer, alarm, watchdog, usb_dev, usb_class])]
+    fn scan_timer_irq(c: scan_timer_irq::Context) {
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
-        let mut layout = c.shared.layout;
-        let mut usb_class = c.shared.usb_class;
-        let underglow = c.shared.underglow;
 
         (timer, alarm).lock(|t, a| {
             a.clear_interrupt(t);
@@ -230,53 +290,8 @@ mod app {
         c.shared.watchdog.feed();
 
         for event in c.shared.debouncer.events(c.shared.matrix.get().unwrap()) {
-            layout.lock(|l| l.event(event));
+            handle_event::spawn(Some(event)).unwrap();
         }
-
-        match layout.lock(|l| l.tick()) {
-            CustomEvent::Press(e) => match e {
-                kb_layout::CustomActions::Underglow => {
-                    c.shared.underglow_state.lock(|us| {
-                        if *us {
-                            let off: [RGB8; 10] = [RGB8::default(); 10];
-                            underglow.write(off.iter().cloned()).unwrap();
-                            *us = false;
-                        } else {
-                            let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
-                            for i in 0..10 {
-                                under_data[i] = RGB8 {
-                                    r: 0xFF,
-                                    g: 0x00,
-                                    b: 0xFF,
-                                };
-                            }
-                            underglow.write(under_data.iter().cloned()).unwrap();
-                            *us = true;
-                        }
-                    });
-                }
-                kb_layout::CustomActions::Bootloader => {
-                    rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
-                }
-            },
-            //_ => (),
-            _ => {
-                c.shared.encoder.lock(|e| {
-                    match e.read_events() {
-                        Some(events) => {
-                            for event in events {
-                                layout.lock(|l| l.event(event));
-                            }
-                        },
-                        None => {},
-                    }
-                });
-            }
-        }
-
-        let report: key_code::KbHidReport = layout.lock(|l| l.keycodes().collect());
-        if usb_class.lock(|k| k.device_mut().set_keyboard_report(report.clone())) {
-            while let Ok(0) = usb_class.lock(|k| k.write(report.as_bytes())) {}
-        }
+        handle_event::spawn(None).unwrap();
     }
 }
