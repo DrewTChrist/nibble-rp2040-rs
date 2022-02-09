@@ -122,12 +122,6 @@ mod app {
             &mut resets,
         );
 
-        let underglow_state: bool = false;
-
-        let encoder_a = pins.gpio8.into_pull_up_input();
-        let encoder_b = pins.gpio9.into_pull_up_input();
-        let encoder = Encoder::new(encoder_a, encoder_b, (3, 14), (4, 14));
-
         let mut timer = Timer::new(c.device.TIMER, &mut resets);
         let mut alarm = timer.alarm_0().unwrap();
         let _ = alarm.schedule(SCAN_TIME_US.microseconds());
@@ -141,6 +135,7 @@ mod app {
             sm0,
             clocks.peripheral_clock.freq(),
         );
+        let leds = Leds { caps_lock: onboard };
 
         let underglow = Ws2812Pio::new(
             pins.gpio7.into_mode(),
@@ -148,8 +143,16 @@ mod app {
             sm1,
             clocks.peripheral_clock.freq(),
         );
+        let underglow_state: bool = false;
 
-        let leds = Leds { caps_lock: onboard };
+        let encoder_a = pins.gpio8.into_pull_up_input();
+        let encoder_b = pins.gpio9.into_pull_up_input();
+        let encoder = Encoder::new(
+            encoder_a,
+            encoder_b,
+            kb_layout::ENCODER_LEFT,
+            kb_layout::ENCODER_RIGHT,
+        );
 
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,

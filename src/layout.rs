@@ -1,4 +1,3 @@
-//use keyberon::action::Action::Trans;
 use keyberon::action::{k, l, m, Action, Action::*};
 use keyberon::key_code::KeyCode::*;
 #[allow(unused_macros)]
@@ -15,6 +14,9 @@ pub enum CustomActions {
     Underglow,
     Bootloader,
 }
+
+pub const ENCODER_LEFT: (u8, u8) = (3, 14);
+pub const ENCODER_RIGHT: (u8, u8) = (4, 14);
 
 const UNDERGLOW: Action<CustomActions> = Action::Custom(CustomActions::Underglow);
 const BOOTLOADER: Action<CustomActions> = Action::Custom(CustomActions::Bootloader);
