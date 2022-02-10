@@ -257,14 +257,6 @@ mod app {
             }
         }
 
-        c.shared.encoder.lock(|e| match e.read_events() {
-            Some(events) => {
-                for event in events {
-                    layout.lock(|l| l.event(event));
-                }
-            }
-            None => {}
-        });
 
         let report: key_code::KbHidReport = layout.lock(|l| l.keycodes().collect());
         if !c
@@ -280,8 +272,8 @@ mod app {
         while let Ok(0) = c.shared.usb_class.lock(|k| k.write(report.as_bytes())) {}
     }
 
-    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [matrix, debouncer, timer, alarm, watchdog, usb_dev, usb_class])]
-    fn scan_timer_irq(c: scan_timer_irq::Context) {
+    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [encoder, matrix, debouncer, timer, alarm, watchdog, usb_dev, usb_class])]
+    fn scan_timer_irq(mut c: scan_timer_irq::Context) {
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
 
@@ -295,6 +287,16 @@ mod app {
         for event in c.shared.debouncer.events(c.shared.matrix.get().unwrap()) {
             handle_event::spawn(Some(event)).unwrap();
         }
+
+        c.shared.encoder.lock(|e| match e.read_events() {
+            Some(events) => {
+                for event in events {
+                    handle_event::spawn(Some(event)).unwrap();
+                }
+            }
+            None => {}
+        });
+        
         handle_event::spawn(None).unwrap();
     }
 }
