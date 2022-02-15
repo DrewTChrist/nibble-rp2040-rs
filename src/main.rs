@@ -16,12 +16,13 @@ mod app {
     };
     use defmt_rtt as _;
     use embedded_time::duration::Extensions;
+    use embedded_time::rate::Extensions as RateExtensions;
     use panic_probe as _;
     use rp2040_hal;
     use rp2040_hal::{
         clocks::{init_clocks_and_plls, Clock},
         gpio::{bank0::*, dynpin::DynPin},
-        pac::PIO0,
+        pac::{I2C0, PIO0},
         pio::{PIOExt, SM0, SM1},
         sio::Sio,
         timer::{Alarm0, Timer},
@@ -38,6 +39,16 @@ mod app {
     use keyberon::key_code;
     use keyberon::layout::{CustomEvent, Event, Layout};
     use keyberon::matrix::PressedKeys;
+
+    use display_interface_i2c::I2CInterface;
+    use embedded_graphics::{
+        mono_font::{ascii::FONT_7X14_BOLD, MonoTextStyleBuilder},
+        pixelcolor::BinaryColor,
+        prelude::*,
+        text::{Baseline, Text},
+    };
+    use ssd1306::mode::BufferedGraphicsMode;
+    use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 
     use smart_leds::{brightness, SmartLedsWrite, RGB8};
     use usb_device::class::UsbClass;
@@ -58,7 +69,7 @@ mod app {
             if status {
                 let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
                 onboard_data[0] = RGB8 {
-                    r: 0xFF,
+                    r: 0x40,
                     g: 0x00,
                     b: 0x00,
                 };
@@ -66,7 +77,12 @@ mod app {
                     .write(brightness(once(onboard_data[0]), 32))
                     .unwrap();
             } else {
-                let onboard_data: [RGB8; 1] = [RGB8::default(); 1];
+                let mut onboard_data: [RGB8; 1] = [RGB8::default(); 1];
+                onboard_data[0] = RGB8 {
+                    r: 0x00,
+                    g: 0x40,
+                    b: 0x00,
+                };
                 self.caps_lock
                     .write(brightness(once(onboard_data[0]), 32))
                     .unwrap();
@@ -80,6 +96,25 @@ mod app {
         underglow: Ws2812Pio<PIO0, SM1, Gpio7>,
         underglow_state: bool,
         encoder: Encoder,
+        display: Ssd1306<
+            I2CInterface<
+                rp2040_hal::I2C<
+                    I2C0,
+                    (
+                        rp2040_hal::gpio::Pin<
+                            rp2040_hal::gpio::bank0::Gpio12,
+                            rp2040_hal::gpio::Function<rp2040_hal::gpio::I2C>,
+                        >,
+                        rp2040_hal::gpio::Pin<
+                            rp2040_hal::gpio::bank0::Gpio13,
+                            rp2040_hal::gpio::Function<rp2040_hal::gpio::I2C>,
+                        >,
+                    ),
+                >,
+            >,
+            DisplaySize128x32,
+            BufferedGraphicsMode<DisplaySize128x32>,
+        >,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         usb_class: keyberon::Class<'static, UsbBus, Leds>,
         timer: Timer,
@@ -154,6 +189,38 @@ mod app {
             kb_layout::ENCODER_RIGHT,
         );
 
+        let sda_pin = pins.gpio12.into_mode::<rp2040_hal::gpio::FunctionI2C>();
+        let scl_pin = pins.gpio13.into_mode::<rp2040_hal::gpio::FunctionI2C>();
+
+        let i2c = rp2040_hal::I2C::i2c0(
+            c.device.I2C0,
+            sda_pin,
+            scl_pin,
+            400_u32.kHz(),
+            &mut resets,
+            clocks.peripheral_clock,
+        );
+
+        let interface = ssd1306::I2CDisplayInterface::new(i2c);
+
+        // Create a driver instance and initialize:
+        let mut display = Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0)
+            .into_buffered_graphics_mode();
+        display.init().unwrap();
+
+        let text_style = MonoTextStyleBuilder::new()
+            .font(&FONT_7X14_BOLD)
+            .text_color(BinaryColor::On)
+            .build();
+
+        display.clear();
+
+        Text::with_baseline("Hello world!", Point::zero(), text_style, Baseline::Top)
+            .draw(&mut display)
+            .unwrap();
+
+        display.flush().unwrap();
+
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
             c.device.USBCTRL_DPRAM,
@@ -193,6 +260,7 @@ mod app {
                 underglow: underglow,
                 underglow_state: underglow_state,
                 encoder: encoder,
+                display: display,
                 usb_dev: usb_dev,
                 usb_class: usb_class,
                 timer: timer,
@@ -257,7 +325,6 @@ mod app {
             }
         }
 
-
         let report: key_code::KbHidReport = layout.lock(|l| l.keycodes().collect());
         if !c
             .shared
@@ -296,7 +363,7 @@ mod app {
             }
             None => {}
         });
-        
+
         handle_event::spawn(None).unwrap();
     }
 }
