@@ -42,13 +42,14 @@ mod app {
 
     use display_interface_i2c::I2CInterface;
     use embedded_graphics::{
+        image::{Image, ImageRaw},
         mono_font::{ascii::FONT_7X14_BOLD, MonoTextStyleBuilder},
         pixelcolor::BinaryColor,
         prelude::*,
         text::{Baseline, Text},
     };
     use ssd1306::mode::BufferedGraphicsMode;
-    use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
+    use ssd1306::{prelude::*, Ssd1306};
 
     use smart_leds::{brightness, SmartLedsWrite, RGB8};
     use usb_device::class::UsbClass;
@@ -215,7 +216,13 @@ mod app {
 
         display.clear();
 
-        Text::with_baseline("Hello world!", Point::zero(), text_style, Baseline::Top)
+        let raw: ImageRaw<BinaryColor> = ImageRaw::new(include_bytes!("./rust.raw"), 32);
+
+        let im = Image::new(&raw, Point::new(96, 0));
+
+        im.draw(&mut display).unwrap();
+
+        Text::with_baseline("Powered by", Point::new(16, 8), text_style, Baseline::Top)
             .draw(&mut display)
             .unwrap();
 
