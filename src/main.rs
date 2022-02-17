@@ -292,7 +292,7 @@ mod app {
         });
     }
 
-    #[task(priority = 1, shared = [underglow, underglow_state])]
+    #[task(priority = 3, shared = [underglow, underglow_state])]
     fn handle_underglow(mut c: handle_underglow::Context) {
         let underglow = c.shared.underglow;
         c.shared.underglow_state.lock(|us| {
@@ -315,7 +315,7 @@ mod app {
         });
     }
 
-    #[task(priority = 3, capacity = 8, shared = [usb_dev, usb_class, layout])]
+    #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout])]
     fn handle_event(mut c: handle_event::Context, event: Option<Event>) {
         let mut layout = c.shared.layout;
         match event {
@@ -350,7 +350,7 @@ mod app {
         while let Ok(0) = c.shared.usb_class.lock(|k| k.write(report.as_bytes())) {}
     }
 
-    #[task(binds = TIMER_IRQ_0, priority = 2, shared = [encoder, matrix, debouncer, timer, alarm, watchdog, usb_dev, usb_class])]
+    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [encoder, matrix, debouncer, timer, alarm, watchdog, usb_dev, usb_class])]
     fn scan_timer_irq(mut c: scan_timer_irq::Context) {
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
