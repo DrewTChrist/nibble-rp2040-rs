@@ -9,7 +9,7 @@ mod layout;
 #[used]
 pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 
-#[rtic::app(device = rp2040_hal::pac, peripherals = true, dispatchers = [PIO0_IRQ_0])]
+#[rtic::app(device = rp2040_hal::pac, peripherals = true, dispatchers = [PIO0_IRQ_0, PIO0_IRQ_1, PIO1_IRQ_0])]
 mod app {
     use cortex_m::prelude::{
         _embedded_hal_watchdog_Watchdog, _embedded_hal_watchdog_WatchdogEnable,
@@ -39,7 +39,6 @@ mod app {
     use keyberon::key_code;
     use keyberon::layout::{CustomEvent, Event, Layout};
     use keyberon::matrix::PressedKeys;
-
     use display_interface_i2c::I2CInterface;
     use embedded_graphics::{
         image::{Image, ImageRaw},
@@ -282,7 +281,7 @@ mod app {
         )
     }
 
-    #[task(binds = USBCTRL_IRQ, priority = 3, shared = [usb_dev, usb_class])]
+    #[task(binds = USBCTRL_IRQ, priority = 4, shared = [usb_dev, usb_class])]
     fn usb_rx(c: usb_rx::Context) {
         let usb = c.shared.usb_dev;
         let kb = c.shared.usb_class;
@@ -293,32 +292,37 @@ mod app {
         });
     }
 
-    #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout, underglow, underglow_state, encoder])]
+    #[task(priority = 1, shared = [underglow, underglow_state])]
+    fn handle_underglow(mut c: handle_underglow::Context) {
+        let underglow = c.shared.underglow;
+        c.shared.underglow_state.lock(|us| {
+            if *us {
+                let off: [RGB8; 10] = [RGB8::default(); 10];
+                underglow.write(off.iter().cloned()).unwrap();
+                *us = false;
+            } else {
+                let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
+                for i in 0..10 {
+                    under_data[i] = RGB8 {
+                        r: 0xFF,
+                        g: 0x00,
+                        b: 0xFF,
+                    };
+                }
+                underglow.write(under_data.iter().cloned()).unwrap();
+                *us = true;
+            }
+        });
+    }
+
+    #[task(priority = 3, capacity = 8, shared = [usb_dev, usb_class, layout])]
     fn handle_event(mut c: handle_event::Context, event: Option<Event>) {
         let mut layout = c.shared.layout;
-        let underglow = c.shared.underglow;
         match event {
             None => match layout.lock(|l| l.tick()) {
                 CustomEvent::Press(event) => match event {
                     kb_layout::CustomActions::Underglow => {
-                        c.shared.underglow_state.lock(|us| {
-                            if *us {
-                                let off: [RGB8; 10] = [RGB8::default(); 10];
-                                underglow.write(off.iter().cloned()).unwrap();
-                                *us = false;
-                            } else {
-                                let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
-                                for i in 0..10 {
-                                    under_data[i] = RGB8 {
-                                        r: 0xFF,
-                                        g: 0x00,
-                                        b: 0xFF,
-                                    };
-                                }
-                                underglow.write(under_data.iter().cloned()).unwrap();
-                                *us = true;
-                            }
-                        });
+                        handle_underglow::spawn().unwrap();
                     }
                     kb_layout::CustomActions::Bootloader => {
                         rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
@@ -346,7 +350,7 @@ mod app {
         while let Ok(0) = c.shared.usb_class.lock(|k| k.write(report.as_bytes())) {}
     }
 
-    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [encoder, matrix, debouncer, timer, alarm, watchdog, usb_dev, usb_class])]
+    #[task(binds = TIMER_IRQ_0, priority = 2, shared = [encoder, matrix, debouncer, timer, alarm, watchdog, usb_dev, usb_class])]
     fn scan_timer_irq(mut c: scan_timer_irq::Context) {
         let timer = c.shared.timer;
         let alarm = c.shared.alarm;
