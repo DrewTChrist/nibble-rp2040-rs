@@ -96,6 +96,8 @@ mod app {
         underglow: Ws2812Pio<PIO0, SM1, Gpio7>,
         underglow_state: bool,
         encoder: Encoder,
+        #[lock_free]
+        display_state: bool,
         display: Ssd1306<
             I2CInterface<
                 rp2040_hal::I2C<
@@ -203,29 +205,13 @@ mod app {
 
         let interface = ssd1306::I2CDisplayInterface::new(i2c);
 
-        // Create a driver instance and initialize:
         let mut display = Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0)
             .into_buffered_graphics_mode();
         display.init().unwrap();
-
-        let text_style = MonoTextStyleBuilder::new()
-            .font(&FONT_7X14_BOLD)
-            .text_color(BinaryColor::On)
-            .build();
-
         display.clear();
-
-        let raw: ImageRaw<BinaryColor> = ImageRaw::new(include_bytes!("./rust.raw"), 32);
-
-        let im = Image::new(&raw, Point::new(96, 0));
-
-        im.draw(&mut display).unwrap();
-
-        Text::with_baseline("Powered by", Point::new(16, 8), text_style, Baseline::Top)
-            .draw(&mut display)
-            .unwrap();
-
         display.flush().unwrap();
+    
+        let display_state = false;
 
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
@@ -267,6 +253,7 @@ mod app {
                 underglow_state: underglow_state,
                 encoder: encoder,
                 display: display,
+                display_state: display_state,
                 usb_dev: usb_dev,
                 usb_class: usb_class,
                 timer: timer,
@@ -315,6 +302,40 @@ mod app {
         });
     }
 
+    #[task(priority = 3, shared = [display, display_state])]
+    fn handle_display(c: handle_display::Context) {
+        let mut display = c.shared.display;
+        let display_state = c.shared.display_state;
+
+        let text_style = MonoTextStyleBuilder::new()
+            .font(&FONT_7X14_BOLD)
+            .text_color(BinaryColor::On)
+            .build();
+
+        display.lock(|d| {
+            if *display_state {
+                d.clear();
+                d.flush().unwrap();
+                *display_state = false;
+            } else {
+                d.clear();
+                                                                                                  
+                let raw: ImageRaw<BinaryColor> = ImageRaw::new(include_bytes!("./rust.raw"), 32);
+                                                                                                  
+                let im = Image::new(&raw, Point::new(96, 0));
+                                                                                                  
+                im.draw(d).unwrap();
+                                                                                                  
+                Text::with_baseline("Powered by", Point::new(16, 8), text_style, Baseline::Top)
+                    .draw(d)
+                    .unwrap();
+                                                                                                  
+                d.flush().unwrap();
+                *display_state = true;
+            }
+        });
+    }
+
     #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout])]
     fn handle_event(mut c: handle_event::Context, event: Option<Event>) {
         let mut layout = c.shared.layout;
@@ -323,9 +344,12 @@ mod app {
                 CustomEvent::Press(event) => match event {
                     kb_layout::CustomActions::Underglow => {
                         handle_underglow::spawn().unwrap();
-                    }
+                    },
                     kb_layout::CustomActions::Bootloader => {
                         rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+                    },
+                    kb_layout::CustomActions::Display => {
+                        handle_display::spawn().unwrap();
                     }
                 },
                 _ => (),

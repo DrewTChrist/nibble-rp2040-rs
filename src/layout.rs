@@ -13,11 +13,13 @@ macro_rules! s {
 pub enum CustomActions {
     Underglow,
     Bootloader,
+    Display,
 }
 
 pub const ENCODER_LEFT: (u8, u8) = (3, 14);
 pub const ENCODER_RIGHT: (u8, u8) = (4, 14);
 
+const DISPLAY: Action<CustomActions> = Action::Custom(CustomActions::Display);
 const UNDERGLOW: Action<CustomActions> = Action::Custom(CustomActions::Underglow);
 const BOOTLOADER: Action<CustomActions> = Action::Custom(CustomActions::Bootloader);
 const COPY: Action<CustomActions> = m(&[LCtrl, C]);
@@ -37,7 +39,7 @@ pub static LAYERS: keyberon::layout::Layers<CustomActions> = &[
     &[
         &[k(No),           Trans, k(F1), k(F2), k(F3), k(F4), k(F5), k(F6), k(F7), k(F8), k(F9), k(F10), k(F11), k(F12), Trans, UNDERGLOW],
         &[k(No),           Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans,  Trans,  Trans,  Trans, BOOTLOADER],
-        &[k(No),           Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans,  Trans,  k(No),  Trans, Trans],
+        &[k(No),           Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans,  Trans,  k(No),  Trans, DISPLAY],
         &[DefaultLayer(0), Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans, Trans,  Trans,  k(No),  Trans, Trans],
         &[DefaultLayer(2), Trans, Trans, Trans, k(No), k(No), Trans, k(No), k(No), Trans, Trans, Trans,  Trans,  k(No),  Trans, Trans],
     ], 
