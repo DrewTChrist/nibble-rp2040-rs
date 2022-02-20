@@ -97,7 +97,6 @@ mod app {
         underglow_state: bool,
         encoder: Encoder,
         #[lock_free]
-        display_state: bool,
         display: Ssd1306<
             I2CInterface<
                 rp2040_hal::I2C<
@@ -117,6 +116,7 @@ mod app {
             DisplaySize128x32,
             BufferedGraphicsMode<DisplaySize128x32>,
         >,
+        display_state: bool,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         usb_class: keyberon::Class<'static, UsbBus, Leds>,
         timer: Timer,
@@ -304,34 +304,34 @@ mod app {
 
     #[task(priority = 3, shared = [display, display_state])]
     fn handle_display(c: handle_display::Context) {
-        let mut display = c.shared.display;
-        let display_state = c.shared.display_state;
+        let display = c.shared.display;
+        let mut display_state = c.shared.display_state;
 
         let text_style = MonoTextStyleBuilder::new()
             .font(&FONT_7X14_BOLD)
             .text_color(BinaryColor::On)
             .build();
 
-        display.lock(|d| {
-            if *display_state {
-                d.clear();
-                d.flush().unwrap();
-                *display_state = false;
+        display_state.lock(|ds| {
+            if *ds {
+                display.clear();
+                display.flush().unwrap();
+                *ds = false;
             } else {
-                d.clear();
+                display.clear();
                                                                                                   
                 let raw: ImageRaw<BinaryColor> = ImageRaw::new(include_bytes!("./rust.raw"), 32);
                                                                                                   
                 let im = Image::new(&raw, Point::new(96, 0));
                                                                                                   
-                im.draw(d).unwrap();
+                im.draw(display).unwrap();
                                                                                                   
                 Text::with_baseline("Powered by", Point::new(16, 8), text_style, Baseline::Top)
-                    .draw(d)
+                    .draw(display)
                     .unwrap();
                                                                                                   
-                d.flush().unwrap();
-                *display_state = true;
+                display.flush().unwrap();
+                *ds = true;
             }
         });
     }
