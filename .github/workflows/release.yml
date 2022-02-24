@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*.*.*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust ${{ matrix.toolchain }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          target: thumbv6m-none-eabi
+          override: true
+
+      - name: Install flip-link
+        uses: actions-rs/install@v0.1
+        with:
+          crate: flip-link
+          version: latest
+          use-tool-cache: true
+          
+          
+      - name: Install elf2uf2-rs
+        uses: actions-rs/install@v0.1
+        with:
+          crate: elf2uf2-rs
+          version: latest
+          use-tool-cache: true
+
+      - name: Run cargo build --release
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+
+      - name: Extract version from tag
+        id: version_tag
+        run: echo ::set-output name=TAG_VERSION::${GITHUB_REF#refs/tags/}
+
+      - name: Rename .uf2
+        env:
+          TAG_VERSION: ${{ steps.version_tag.outputs.TAG_VERSION }}
+        run: |
+          mv target/thumbv6m-none-eabi/release/nibble2040 nibble2040-$TAG_VERSION.uf2
+        #  mv firmware.bin firmware-$TAG_VERSION.bin
+
+      - name: Create release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: firmware*
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
