@@ -23,6 +23,12 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           target: thumbv6m-none-eabi
           override: true
+          
+      - name: flip-link
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: flip-link
 
       - name: cargo build release
         uses: actions-rs/cargo@v1
