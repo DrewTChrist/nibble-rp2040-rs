@@ -57,13 +57,12 @@ jobs:
           TAG_VERSION: ${{ steps.version_tag.outputs.TAG_VERSION }}
         run: |
           mv target/thumbv6m-none-eabi/release/nibble2040 nibble2040-$TAG_VERSION.uf2
-        #  mv firmware.bin firmware-$TAG_VERSION.bin
 
       - name: Create release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: firmware*
+          file: nibble2040*
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true
