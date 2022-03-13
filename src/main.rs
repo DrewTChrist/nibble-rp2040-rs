@@ -162,7 +162,7 @@ mod app {
         let mut timer = Timer::new(c.device.TIMER, &mut resets);
         let mut alarm = timer.alarm_0().unwrap();
         let _ = alarm.schedule(SCAN_TIME_US.microseconds());
-        alarm.enable_interrupt(&mut timer);
+        alarm.enable_interrupt();
 
         let (mut pio, sm0, sm1, _, _) = c.device.PIO0.split(&mut resets);
 
@@ -376,11 +376,10 @@ mod app {
 
     #[task(binds = TIMER_IRQ_0, priority = 1, shared = [encoder, matrix, debouncer, timer, alarm, watchdog, usb_dev, usb_class])]
     fn scan_timer_irq(mut c: scan_timer_irq::Context) {
-        let timer = c.shared.timer;
-        let alarm = c.shared.alarm;
+        let mut alarm = c.shared.alarm;
 
-        (timer, alarm).lock(|t, a| {
-            a.clear_interrupt(t);
+        alarm.lock(|a| {
+            a.clear_interrupt();
             let _ = a.schedule(SCAN_TIME_US.microseconds());
         });
 

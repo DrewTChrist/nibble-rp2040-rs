@@ -560,9 +560,9 @@ checksum = "0744126afe1a6dd7f394cb50a716dbe086cb06e255e53d8d0185d82828358fb5"
 
 [[package]]
 name = "pio"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "593b4978951e32f8dd5b76203503a9dd8dc4665e4bcb4f7fe8e03e33b9f7abc0"
+checksum = "0fd642eada42517e6589cd7f5e830630324aec628fb4aa719000f8801e40c0a2"
 dependencies = [
  "arrayvec",
  "num_enum",
@@ -676,7 +676,8 @@ dependencies = [
 [[package]]
 name = "rp2040-hal"
 version = "0.4.0"
-source = "git+https://github.com/rp-rs/rp-hal.git#c180e7867b9463793c993a05e792c8ffb690d870"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4bca865e0a5a0aba04992ede50d7585f3dba13863943445b5ad1c81270e112e"
 dependencies = [
  "cortex-m",
  "critical-section",
@@ -695,9 +696,9 @@ dependencies = [
 
 [[package]]
 name = "rp2040-pac"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db04fc92670038074acf20ad422130b735897937812a1761b17cfc26d56c253f"
+checksum = "13a6106d5db01c7171a39c1f7696780912db9b42fe7ac722db60069c8904ea7c"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
@@ -856,7 +857,8 @@ dependencies = [
 
 [[package]]
 name = "ws2812-pio"
-version = "0.1.0"
+version = "0.2.0"
+source = "git+https://github.com/ithinuel/ws2812-pio-rs#fd6b6604d65a66242b52ccf7f24a95ca325991dd"
 dependencies = [
  "cortex-m",
  "embedded-hal",

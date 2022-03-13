@@ -16,8 +16,8 @@ pub enum CustomActions {
     Display,
 }
 
-pub const ENCODER_LEFT: (u8, u8) = (3, 14);
-pub const ENCODER_RIGHT: (u8, u8) = (4, 14);
+pub const ENCODER_LEFT: (u8, u8) = (3, 14);  // arrow up
+pub const ENCODER_RIGHT: (u8, u8) = (4, 14); // arrow down
 
 const DISPLAY: Action<CustomActions> = Action::Custom(CustomActions::Display);
 const UNDERGLOW: Action<CustomActions> = Action::Custom(CustomActions::Underglow);
@@ -29,6 +29,10 @@ const PASTE: Action<CustomActions> = m(&[LCtrl, V]);
 #[rustfmt::skip]
 pub static LAYERS: keyberon::layout::Layers<CustomActions> = &[
     /* QWERTY */
+    /* 
+        All Trans keys are placeholders to even out the layout
+        All k(No) keys are functional
+    */
     &[
         &[k(No),   k(Escape),   k(Kb1),  k(Kb2),  k(Kb3),   k(Kb4), k(Kb5),   k(Kb6), k(Kb7), k(Kb8),   k(Kb9),   k(Kb0),    k(Minus),    k(Equal),    k(BSpace), k(Home)],
         &[k(LGui), k(Tab),      k(Q),    k(W),    k(E),     k(R),   k(T),     k(Y),   k(U),   k(I),     k(O),     k(P),      k(LBracket), k(RBracket), k(Bslash), k(End)],
