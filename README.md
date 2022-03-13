@@ -41,11 +41,16 @@ will build the firmware and put it onto the device
 cargo run --release
 ```
 
+Alternatively there is a prebuilt uf2 firmware in the repo that can be moved onto
+the virtual drive of the RP2040 when it is put into bootloader mode.
+
 ## Usage
 The layout can be configured in `src/layout.rs` before flashing to the KB2040.
 
 ## Supported Features 
 * OLED display
+
+This needs worked on still.
 
 The KB2040 comes with a Stemma QT/Qwiic connector which I have personally used to wire up
 my OLED display. This required a bit of modification to the FR4 plate to get the cable to
