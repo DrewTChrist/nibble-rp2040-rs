@@ -13,13 +13,11 @@ macro_rules! s {
 pub enum CustomActions {
     Underglow,
     Bootloader,
-    Display,
 }
 
 pub const ENCODER_LEFT: (u8, u8) = (3, 14);  // arrow up
 pub const ENCODER_RIGHT: (u8, u8) = (4, 14); // arrow down
 
-const DISPLAY: Action<CustomActions> = Action::Custom(CustomActions::Display);
 const UNDERGLOW: Action<CustomActions> = Action::Custom(CustomActions::Underglow);
 const BOOTLOADER: Action<CustomActions> = Action::Custom(CustomActions::Bootloader);
 const COPY: Action<CustomActions> = m(&[LCtrl, C]);

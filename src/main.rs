@@ -39,7 +39,6 @@ mod app {
     use keyberon::key_code;
     use keyberon::layout::{CustomEvent, Event, Layout};
     use keyberon::matrix::PressedKeys;
-    use display_interface_i2c::I2CInterface;
     use embedded_graphics::{
         image::{Image, ImageRaw},
         mono_font::{ascii::FONT_7X14_BOLD, MonoTextStyleBuilder},
@@ -96,27 +95,6 @@ mod app {
         underglow: Ws2812Pio<PIO0, SM1, Gpio7>,
         underglow_state: bool,
         encoder: Encoder,
-        #[lock_free]
-        display: Ssd1306<
-            I2CInterface<
-                rp2040_hal::I2C<
-                    I2C0,
-                    (
-                        rp2040_hal::gpio::Pin<
-                            rp2040_hal::gpio::bank0::Gpio12,
-                            rp2040_hal::gpio::Function<rp2040_hal::gpio::I2C>,
-                        >,
-                        rp2040_hal::gpio::Pin<
-                            rp2040_hal::gpio::bank0::Gpio13,
-                            rp2040_hal::gpio::Function<rp2040_hal::gpio::I2C>,
-                        >,
-                    ),
-                >,
-            >,
-            DisplaySize128x32,
-            BufferedGraphicsMode<DisplaySize128x32>,
-        >,
-        display_state: bool,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         usb_class: keyberon::Class<'static, UsbBus, Leds>,
         timer: Timer,
@@ -194,25 +172,6 @@ mod app {
         let sda_pin = pins.gpio12.into_mode::<rp2040_hal::gpio::FunctionI2C>();
         let scl_pin = pins.gpio13.into_mode::<rp2040_hal::gpio::FunctionI2C>();
 
-        let i2c = rp2040_hal::I2C::i2c0(
-            c.device.I2C0,
-            sda_pin,
-            scl_pin,
-            400_u32.kHz(),
-            &mut resets,
-            clocks.peripheral_clock,
-        );
-
-        let interface = ssd1306::I2CDisplayInterface::new(i2c);
-
-        let mut display = Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0)
-            .into_buffered_graphics_mode();
-        display.init().unwrap();
-        display.clear();
-        display.flush().unwrap();
-    
-        let display_state = false;
-
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
             c.device.USBCTRL_DPRAM,
@@ -252,8 +211,6 @@ mod app {
                 underglow: underglow,
                 underglow_state: underglow_state,
                 encoder: encoder,
-                display: display,
-                display_state: display_state,
                 usb_dev: usb_dev,
                 usb_class: usb_class,
                 timer: timer,
@@ -302,39 +259,6 @@ mod app {
         });
     }
 
-    #[task(priority = 3, shared = [display, display_state])]
-    fn handle_display(c: handle_display::Context) {
-        let display = c.shared.display;
-        let mut display_state = c.shared.display_state;
-
-        let text_style = MonoTextStyleBuilder::new()
-            .font(&FONT_7X14_BOLD)
-            .text_color(BinaryColor::On)
-            .build();
-
-        display_state.lock(|ds| {
-            if *ds {
-                display.clear();
-                display.flush().unwrap();
-                *ds = false;
-            } else {
-                display.clear();
-                                                                                                  
-                let raw: ImageRaw<BinaryColor> = ImageRaw::new(include_bytes!("./rust.raw"), 32);
-                                                                                                  
-                let im = Image::new(&raw, Point::new(96, 0));
-                                                                                                  
-                im.draw(display).unwrap();
-                                                                                                  
-                Text::with_baseline("Powered by", Point::new(16, 8), text_style, Baseline::Top)
-                    .draw(display)
-                    .unwrap();
-                                                                                                  
-                display.flush().unwrap();
-                *ds = true;
-            }
-        });
-    }
 
     #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout])]
     fn handle_event(mut c: handle_event::Context, event: Option<Event>) {
@@ -348,9 +272,6 @@ mod app {
                     kb_layout::CustomActions::Bootloader => {
                         rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
                     },
-                    kb_layout::CustomActions::Display => {
-                        handle_display::spawn().unwrap();
-                    }
                 },
                 _ => (),
             },
