@@ -283,9 +283,7 @@ mod app {
                 *us = false;
             } else {
                 let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
-                //for i in 0..10 {
                 for data in &mut under_data {
-                    //under_data[i] = RGB8 {
                     *data = RGB8 {
                         r: 0xFF,
                         g: 0x00,
