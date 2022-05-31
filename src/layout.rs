@@ -1,4 +1,4 @@
-use keyberon::action::{k, l, m, Action, Action::*};
+use keyberon::action::{k, Action, Action::*};
 use keyberon::key_code::KeyCode::*;
 #[allow(unused_macros)]
 
@@ -19,11 +19,12 @@ pub enum CustomActions {
 pub const ENCODER_LEFT: (u8, u8) = (3, 14);  // arrow up
 pub const ENCODER_RIGHT: (u8, u8) = (4, 14); // arrow down
 
+#[allow(dead_code)]
 const DISPLAY: Action<CustomActions> = Action::Custom(CustomActions::Display);
+#[allow(dead_code)]
 const UNDERGLOW: Action<CustomActions> = Action::Custom(CustomActions::Underglow);
+#[allow(dead_code)]
 const BOOTLOADER: Action<CustomActions> = Action::Custom(CustomActions::Bootloader);
-const COPY: Action<CustomActions> = m(&[LCtrl, C]);
-const PASTE: Action<CustomActions> = m(&[LCtrl, V]);
 
 #[rustfmt::skip]
 pub static LAYERS: keyberon::layout::Layers<CustomActions> = &[

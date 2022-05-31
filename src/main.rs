@@ -35,10 +35,6 @@ mod app {
     use crate::demux_matrix::DemuxMatrix;
     use crate::encoder::Encoder;
     use crate::layout as kb_layout;
-    use keyberon::debounce::Debouncer;
-    use keyberon::key_code;
-    use keyberon::layout::{CustomEvent, Event, Layout};
-    use keyberon::matrix::PressedKeys;
     use display_interface_i2c::I2CInterface;
     use embedded_graphics::{
         image::{Image, ImageRaw},
@@ -47,6 +43,10 @@ mod app {
         prelude::*,
         text::{Baseline, Text},
     };
+    use keyberon::debounce::Debouncer;
+    use keyberon::key_code;
+    use keyberon::layout::{CustomEvent, Event, Layout};
+    use keyberon::matrix::PressedKeys;
     use ssd1306::mode::BufferedGraphicsMode;
     use ssd1306::{prelude::*, Ssd1306};
 
@@ -90,6 +90,18 @@ mod app {
         }
     }
 
+    type Sda = rp2040_hal::gpio::Pin<
+        rp2040_hal::gpio::bank0::Gpio12,
+        rp2040_hal::gpio::Function<rp2040_hal::gpio::I2C>,
+    >;
+
+    type Scl = rp2040_hal::gpio::Pin<
+        rp2040_hal::gpio::bank0::Gpio13,
+        rp2040_hal::gpio::Function<rp2040_hal::gpio::I2C>,
+    >;
+
+    type DisplayI2C = I2CInterface<rp2040_hal::I2C<I2C0, (Sda, Scl)>>;
+
     #[shared]
     struct Shared {
         #[lock_free]
@@ -97,25 +109,7 @@ mod app {
         underglow_state: bool,
         encoder: Encoder,
         #[lock_free]
-        display: Ssd1306<
-            I2CInterface<
-                rp2040_hal::I2C<
-                    I2C0,
-                    (
-                        rp2040_hal::gpio::Pin<
-                            rp2040_hal::gpio::bank0::Gpio12,
-                            rp2040_hal::gpio::Function<rp2040_hal::gpio::I2C>,
-                        >,
-                        rp2040_hal::gpio::Pin<
-                            rp2040_hal::gpio::bank0::Gpio13,
-                            rp2040_hal::gpio::Function<rp2040_hal::gpio::I2C>,
-                        >,
-                    ),
-                >,
-            >,
-            DisplaySize128x32,
-            BufferedGraphicsMode<DisplaySize128x32>,
-        >,
+        display: Ssd1306<DisplayI2C, DisplaySize128x32, BufferedGraphicsMode<DisplaySize128x32>>,
         display_state: bool,
         usb_dev: usb_device::device::UsbDevice<'static, UsbBus>,
         usb_class: keyberon::Class<'static, UsbBus, Leds>,
@@ -210,7 +204,7 @@ mod app {
         display.init().unwrap();
         display.clear();
         display.flush().unwrap();
-    
+
         let display_state = false;
 
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
@@ -249,19 +243,19 @@ mod app {
 
         (
             Shared {
-                underglow: underglow,
-                underglow_state: underglow_state,
-                encoder: encoder,
-                display: display,
-                display_state: display_state,
-                usb_dev: usb_dev,
-                usb_class: usb_class,
-                timer: timer,
-                alarm: alarm,
+                underglow,
+                underglow_state,
+                encoder,
+                display,
+                display_state,
+                usb_dev,
+                usb_class,
+                timer,
+                alarm,
                 matrix: matrix.unwrap(),
                 debouncer: Debouncer::new(PressedKeys::default(), PressedKeys::default(), 10),
                 layout: Layout::new(kb_layout::LAYERS),
-                watchdog: watchdog,
+                watchdog,
             },
             Local {},
             init::Monotonics(),
@@ -289,8 +283,10 @@ mod app {
                 *us = false;
             } else {
                 let mut under_data: [RGB8; 10] = [RGB8::default(); 10];
-                for i in 0..10 {
-                    under_data[i] = RGB8 {
+                //for i in 0..10 {
+                for data in &mut under_data {
+                    //under_data[i] = RGB8 {
+                    *data = RGB8 {
                         r: 0xFF,
                         g: 0x00,
                         b: 0xFF,
@@ -319,17 +315,17 @@ mod app {
                 *ds = false;
             } else {
                 display.clear();
-                                                                                                  
+
                 let raw: ImageRaw<BinaryColor> = ImageRaw::new(include_bytes!("./rust.raw"), 32);
-                                                                                                  
+
                 let im = Image::new(&raw, Point::new(96, 0));
-                                                                                                  
+
                 im.draw(display).unwrap();
-                                                                                                  
+
                 Text::with_baseline("Powered by", Point::new(16, 8), text_style, Baseline::Top)
                     .draw(display)
                     .unwrap();
-                                                                                                  
+
                 display.flush().unwrap();
                 *ds = true;
             }
@@ -340,20 +336,21 @@ mod app {
     fn handle_event(mut c: handle_event::Context, event: Option<Event>) {
         let mut layout = c.shared.layout;
         match event {
-            None => match layout.lock(|l| l.tick()) {
-                CustomEvent::Press(event) => match event {
-                    kb_layout::CustomActions::Underglow => {
-                        handle_underglow::spawn().unwrap();
-                    },
-                    kb_layout::CustomActions::Bootloader => {
-                        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
-                    },
-                    kb_layout::CustomActions::Display => {
-                        handle_display::spawn().unwrap();
-                    }
-                },
-                _ => (),
-            },
+            None => {
+                if let CustomEvent::Press(event) = layout.lock(|l| l.tick()) {
+                    match event {
+                        kb_layout::CustomActions::Underglow => {
+                            handle_underglow::spawn().unwrap();
+                        }
+                        kb_layout::CustomActions::Bootloader => {
+                            rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+                        }
+                        kb_layout::CustomActions::Display => {
+                            handle_display::spawn().unwrap();
+                        }
+                    };
+                }
+            }
             Some(e) => {
                 layout.lock(|l| l.event(e));
                 return;
@@ -389,13 +386,12 @@ mod app {
             handle_event::spawn(Some(event)).unwrap();
         }
 
-        c.shared.encoder.lock(|e| match e.read_events() {
-            Some(events) => {
+        c.shared.encoder.lock(|e| {
+            if let Some(events) = e.read_events() {
                 for event in events {
                     handle_event::spawn(Some(event)).unwrap();
                 }
             }
-            None => {}
         });
 
         handle_event::spawn(None).unwrap();
