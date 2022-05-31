@@ -1,5 +1,4 @@
 use core::convert::TryInto;
-use cortex_m;
 use embedded_hal::digital::v2::{InputPin, OutputPin, PinState};
 use keyberon::matrix::PressedKeys;
 
@@ -8,7 +7,6 @@ where
     C: OutputPin,
     R: InputPin,
 {
-    //cols: [C; CS],
     cols: [C; 4],
     rows: [R; RS],
     true_cols: usize,
@@ -20,7 +18,6 @@ where
     R: InputPin,
 {
     pub fn new<E>(
-        //cols: [C; CS],
         cols: [C; 4],
         rows: [R; RS],
         true_cols: usize,
@@ -55,13 +52,9 @@ where
         for bit in 0..self.cols.len() {
             let state: u8 = ((col & (0b1 << bit)) >> bit).try_into().unwrap();
             if state == 0 {
-                match self.cols[bit].set_state(PinState::Low) {
-                    _ => (),
-                }
+                self.cols[bit].set_state(PinState::Low);
             } else if state == 1 {
-                match self.cols[bit].set_state(PinState::High) {
-                    _ => (),
-                }
+                self.cols[bit].set_state(PinState::High);
             }
         }
     }
