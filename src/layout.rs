@@ -1,4 +1,4 @@
-use keyberon::action::{k, Action, Action::*};
+use keyberon::action::{k, l, m, Action, Action::*};
 use keyberon::key_code::KeyCode::*;
 #[allow(unused_macros)]
 
