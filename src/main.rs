@@ -46,7 +46,6 @@ mod app {
     use keyberon::debounce::Debouncer;
     use keyberon::key_code;
     use keyberon::layout::{CustomEvent, Event, Layout};
-    use keyberon::matrix::PressedKeys;
     use ssd1306::mode::BufferedGraphicsMode;
     use ssd1306::{prelude::*, Ssd1306};
 
@@ -117,9 +116,9 @@ mod app {
         alarm: Alarm0,
         #[lock_free]
         matrix: DemuxMatrix<DynPin, DynPin, 16, 5>,
-        layout: Layout<kb_layout::CustomActions>,
+        layout: Layout<16, 5, 1, kb_layout::CustomActions>,
         #[lock_free]
-        debouncer: Debouncer<PressedKeys<16, 5>>,
+        debouncer: Debouncer<[[bool; 16]; 5]>,
         #[lock_free]
         watchdog: Watchdog,
     }
@@ -253,8 +252,8 @@ mod app {
                 timer,
                 alarm,
                 matrix: matrix.unwrap(),
-                debouncer: Debouncer::new(PressedKeys::default(), PressedKeys::default(), 10),
-                layout: Layout::new(kb_layout::LAYERS),
+                debouncer: Debouncer::new([[false; 16]; 5], [[false; 16]; 5], 10),
+                layout: Layout::new(&kb_layout::LAYERS),
                 watchdog,
             },
             Local {},

@@ -1,6 +1,5 @@
 use core::convert::TryInto;
 use embedded_hal::digital::v2::{InputPin, OutputPin, PinState};
-use keyberon::matrix::PressedKeys;
 
 pub struct DemuxMatrix<C, R, const CS: usize, const RS: usize>
 where
@@ -58,18 +57,18 @@ where
             }
         }
     }
-    pub fn get<E>(&mut self) -> Result<PressedKeys<CS, RS>, E>
+    pub fn get<E>(&mut self) -> Result<[[bool; CS]; RS], E>
     where
         C: OutputPin<Error = E>,
         R: InputPin<Error = E>,
     {
-        let mut keys = PressedKeys::default();
+        let mut keys = [[false; CS]; RS];
 
         for current_col in 0..self.true_cols {
             self.select_column(current_col);
             cortex_m::asm::delay(5000);
             for (ri, row) in (&mut self.rows).iter_mut().enumerate() {
-                keys.0[ri][current_col] = row.is_low()?;
+                keys[ri][current_col] = row.is_low()?;
             }
         }
         Ok(keys)
