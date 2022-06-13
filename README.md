@@ -16,7 +16,7 @@ other Pro Micro compatible variant. There is currently no official QMK support f
 ## Installation
 
 ### Dependencies
-To build this firmware you will need to install the proper Rust target archetecture
+To build this firmware you will need to install the proper Rust target architecture
 and flip-link and elfuf2-rs.
 
 ```bash

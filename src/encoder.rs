@@ -40,10 +40,10 @@ impl Encoder {
         right_event: (u8, u8),
     ) -> Self {
         let mut s = Self {
-            pad_a: pad_a,
-            pad_b: pad_b,
-            left_event: left_event,
-            right_event: right_event,
+            pad_a,
+            pad_b,
+            left_event,
+            right_event,
             value: 0,
             state: 0,
             pulses: 0,
@@ -54,12 +54,12 @@ impl Encoder {
     }
     fn init_state(&mut self) {
         self.state =
-            (self.pad_a.is_high().unwrap() as u8) << 0 | (self.pad_b.is_high().unwrap() as u8) << 1;
+            self.pad_a.is_high().unwrap() as u8  | (self.pad_b.is_high().unwrap() as u8) << 1;
     }
     pub fn read_direction(&mut self) -> Direction {
         self.state <<= 2;
         self.state |=
-            (self.pad_a.is_high().unwrap() as u8) << 0 | (self.pad_b.is_high().unwrap() as u8) << 1;
+            self.pad_a.is_high().unwrap() as u8  | (self.pad_b.is_high().unwrap() as u8) << 1;
 
         self.pulses += QUADRATURE_LUT[(self.state & 0xF) as usize];
         if self.pulses >= self.resolution {
