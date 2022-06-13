@@ -52,11 +52,14 @@ jobs:
         id: version_tag
         run: echo ::set-output name=TAG_VERSION::${GITHUB_REF#refs/tags/}
 
+      - name: Build .uf2 with elf2uf2-rs
+        run: elf2uf2-rs target/thumbv6m-none-eabi/release/nibble2040
+
       - name: Rename .uf2
         env:
           TAG_VERSION: ${{ steps.version_tag.outputs.TAG_VERSION }}
         run: |
-          mv target/thumbv6m-none-eabi/release/nibble2040 nibble2040-$TAG_VERSION.uf2
+          mv target/thumbv6m-none-eabi/release/nibble2040.uf2 nibble2040-$TAG_VERSION.uf2
 
       - name: Create release
         uses: svenstaro/upload-release-action@v2
