@@ -13,11 +13,11 @@ The Nibble is typically built with a [Bit-C](https://nullbits.co/bit-c/) (mega32
 
 ## Table of Contents
 
-1. [Installing Dependencies](#installing dependencies)
+1. [Installing Dependencies](#installing-dependencies)
 2. [Layout](#layout)
-3. [Building/Flashing](#building/flashing)
-4. [Supported Features](#supported features)
-5. [Build Photos](#buildphotos)
+3. [Building and Flashing](#building-and-flashing)
+4. [Supported Features](#supported-features)
+5. [Build Photos](#build-photos)
 
 ## Installing Dependencies
 To build this firmware you will need to install the proper Rust target architecture
