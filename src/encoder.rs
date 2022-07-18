@@ -1,19 +1,7 @@
 use embedded_hal::digital::v2::InputPin;
 use keyberon::layout::Event;
-use rp2040_hal::gpio::{bank0::Gpio8, bank0::Gpio9, Pin, PullUpInput};
 
 const QUADRATURE_LUT: [i8; 16] = [0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0];
-
-pub struct Encoder {
-    pad_a: Pin<Gpio8, PullUpInput>,
-    pad_b: Pin<Gpio9, PullUpInput>,
-    left_event: (u8, u8),
-    right_event: (u8, u8),
-    value: u8,
-    state: u8,
-    pulses: i8,
-    resolution: i8,
-}
 
 pub enum Direction {
     Left = 1,
@@ -32,13 +20,36 @@ impl Direction {
     }
 }
 
-impl Encoder {
-    pub fn new(
-        pad_a: Pin<Gpio8, PullUpInput>,
-        pad_b: Pin<Gpio9, PullUpInput>,
+pub struct Encoder<A, B>
+where
+    A: InputPin,
+    B: InputPin,
+{
+    pad_a: A,
+    pad_b: B,
+    left_event: (u8, u8),
+    right_event: (u8, u8),
+    value: u8,
+    state: u8,
+    pulses: i8,
+    resolution: i8,
+}
+
+impl<A: InputPin, B: InputPin> Encoder<A, B>
+where
+    A: InputPin,
+    B: InputPin,
+{
+    pub fn new<E>(
+        pad_a: A,
+        pad_b: B,
         left_event: (u8, u8),
         right_event: (u8, u8),
-    ) -> Self {
+    ) -> Result<Self, E>
+    where
+        A: InputPin<Error = E>,
+        B: InputPin<Error = E>,
+    {
         let mut s = Self {
             pad_a,
             pad_b,
@@ -49,17 +60,24 @@ impl Encoder {
             pulses: 0,
             resolution: 4,
         };
-        s.init_state();
-        s
+        s.init_state()?;
+        Ok(s)
     }
-    fn init_state(&mut self) {
-        self.state =
-            self.pad_a.is_high().unwrap() as u8  | (self.pad_b.is_high().unwrap() as u8) << 1;
+    fn init_state<E>(&mut self) -> Result<(), E>
+    where
+        A: InputPin<Error = E>,
+        B: InputPin<Error = E>,
+    {
+        self.state = self.pad_a.is_high()? as u8 | (self.pad_b.is_high()? as u8) << 1;
+        Ok(())
     }
-    pub fn read_direction(&mut self) -> Direction {
+    fn read_direction<E>(&mut self) -> Result<Direction, E>
+    where
+        A: InputPin<Error = E>,
+        B: InputPin<Error = E>,
+    {
         self.state <<= 2;
-        self.state |=
-            self.pad_a.is_high().unwrap() as u8  | (self.pad_b.is_high().unwrap() as u8) << 1;
+        self.state |= self.pad_a.is_high()? as u8 | (self.pad_b.is_high()? as u8) << 1;
 
         self.pulses += QUADRATURE_LUT[(self.state & 0xF) as usize];
         if self.pulses >= self.resolution {
@@ -68,19 +86,26 @@ impl Encoder {
         if self.pulses <= -self.resolution {
             self.value -= 1;
         }
-        Direction::from_i8(QUADRATURE_LUT[(self.state & 0xF) as usize])
+        Ok(Direction::from_i8(
+            QUADRATURE_LUT[(self.state & 0xF) as usize],
+        ))
     }
-    pub fn read_events(&mut self) -> Option<[Event; 2]> {
+    pub fn read_events<E>(&mut self) -> Result<Option<[Event; 2]>, E>
+    where
+        A: InputPin<Error = E>,
+        B: InputPin<Error = E>,
+    {
         match self.read_direction() {
-            Direction::Left => Some([
+            Ok(Direction::Left) => Ok(Some([
                 Event::Press(self.left_event.0, self.left_event.1),
                 Event::Release(self.left_event.0, self.left_event.1),
-            ]),
-            Direction::Right => Some([
+            ])),
+            Ok(Direction::Right) => Ok(Some([
                 Event::Press(self.right_event.0, self.right_event.1),
                 Event::Release(self.right_event.0, self.right_event.1),
-            ]),
-            Direction::Still => None,
+            ])),
+            Ok(Direction::Still) => Ok(None),
+            _ => Ok(None),
         }
     }
 }

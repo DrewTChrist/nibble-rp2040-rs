@@ -16,11 +16,7 @@ where
     C: OutputPin,
     R: InputPin,
 {
-    pub fn new<E>(
-        cols: [C; 4],
-        rows: [R; RS],
-        true_cols: usize,
-    ) -> Result<Self, E>
+    pub fn new<E>(cols: [C; 4], rows: [R; RS], true_cols: usize) -> Result<Self, E>
     where
         C: OutputPin<Error = E>,
         R: InputPin<Error = E>,
@@ -43,7 +39,7 @@ where
         }
         Ok(())
     }
-    fn select_column<E>(&mut self, col: usize)
+    fn select_column<E>(&mut self, col: usize) -> Result<(), E>
     where
         C: OutputPin<Error = E>,
         R: InputPin<Error = E>,
@@ -51,11 +47,12 @@ where
         for bit in 0..self.cols.len() {
             let state: u8 = ((col & (0b1 << bit)) >> bit).try_into().unwrap();
             if state == 0 {
-                self.cols[bit].set_state(PinState::Low);
+                self.cols[bit].set_state(PinState::Low)?;
             } else if state == 1 {
-                self.cols[bit].set_state(PinState::High);
+                self.cols[bit].set_state(PinState::High)?;
             }
         }
+        Ok(())
     }
     pub fn get<E>(&mut self) -> Result<[[bool; CS]; RS], E>
     where
@@ -65,7 +62,7 @@ where
         let mut keys = [[false; CS]; RS];
 
         for current_col in 0..self.true_cols {
-            self.select_column(current_col);
+            self.select_column(current_col)?;
             cortex_m::asm::delay(5000);
             for (ri, row) in (&mut self.rows).iter_mut().enumerate() {
                 keys[ri][current_col] = row.is_low()?;

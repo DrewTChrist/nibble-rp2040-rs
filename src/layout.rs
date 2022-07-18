@@ -16,7 +16,7 @@ pub enum CustomActions {
     Display,
 }
 
-pub const ENCODER_LEFT: (u8, u8) = (3, 14);  // arrow up
+pub const ENCODER_LEFT: (u8, u8) = (3, 14); // arrow up
 pub const ENCODER_RIGHT: (u8, u8) = (4, 14); // arrow down
 
 #[allow(dead_code)]

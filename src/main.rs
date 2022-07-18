@@ -4,6 +4,7 @@
 mod demux_matrix;
 mod encoder;
 mod layout;
+mod types;
 
 #[link_section = ".boot2"]
 #[used]
@@ -21,11 +22,11 @@ mod app {
     use rp2040_hal;
     use rp2040_hal::{
         clocks::{init_clocks_and_plls, Clock},
-        gpio::{bank0::*, dynpin::DynPin},
-        pac::{I2C0, PIO0},
-        pio::{PIOExt, SM0, SM1},
+        gpio::dynpin::DynPin,
+        pac::I2C0,
+        pio::PIOExt,
         sio::Sio,
-        timer::{Alarm0, Timer},
+        timer::{Alarm, Alarm0, Timer},
         usb::UsbBus,
         watchdog::Watchdog,
     };
@@ -35,6 +36,7 @@ mod app {
     use crate::demux_matrix::DemuxMatrix;
     use crate::encoder::Encoder;
     use crate::layout as kb_layout;
+    use crate::types::active;
     use display_interface_i2c::I2CInterface;
     use embedded_graphics::{
         image::{Image, ImageRaw},
@@ -53,14 +55,14 @@ mod app {
     use usb_device::class::UsbClass;
     use usb_device::class_prelude::UsbBusAllocator;
     use usb_device::device::UsbDeviceState;
-    use ws2812_pio::Ws2812Direct as Ws2812Pio;
+    use ws2812_pio::Ws2812Direct;
 
     const SCAN_TIME_US: u32 = 1000;
     const EXTERNAL_XTAL_FREQ_HZ: u32 = 12_000_000u32;
     static mut USB_BUS: Option<UsbBusAllocator<UsbBus>> = None;
 
     pub struct Leds {
-        caps_lock: Ws2812Pio<PIO0, SM0, Gpio17>,
+        caps_lock: active::OnBoardLED,
     }
 
     impl keyberon::keyboard::Leds for Leds {
@@ -89,24 +91,14 @@ mod app {
         }
     }
 
-    type Sda = rp2040_hal::gpio::Pin<
-        rp2040_hal::gpio::bank0::Gpio12,
-        rp2040_hal::gpio::Function<rp2040_hal::gpio::I2C>,
-    >;
-
-    type Scl = rp2040_hal::gpio::Pin<
-        rp2040_hal::gpio::bank0::Gpio13,
-        rp2040_hal::gpio::Function<rp2040_hal::gpio::I2C>,
-    >;
-
-    type DisplayI2C = I2CInterface<rp2040_hal::I2C<I2C0, (Sda, Scl)>>;
+    type DisplayI2C = I2CInterface<rp2040_hal::I2C<I2C0, (active::Sda, active::Scl)>>;
 
     #[shared]
     struct Shared {
         #[lock_free]
-        underglow: Ws2812Pio<PIO0, SM1, Gpio7>,
+        underglow: active::Underglow,
         underglow_state: bool,
-        encoder: Encoder,
+        encoder: Encoder<active::EncoderPadA, active::EncoderPadB>,
         #[lock_free]
         display: Ssd1306<DisplayI2C, DisplaySize128x32, BufferedGraphicsMode<DisplaySize128x32>>,
         display_state: bool,
@@ -159,15 +151,20 @@ mod app {
 
         let (mut pio, sm0, sm1, _, _) = c.device.PIO0.split(&mut resets);
 
-        let onboard = Ws2812Pio::new(
+        // onboard led is gpio 25 for pro micro
+        let onboard = Ws2812Direct::new(
+            #[cfg(feature = "kb2040")]
             pins.gpio17.into_mode(),
+            #[cfg(feature = "rp2040-pro-micro")]
+            pins.gpio25.into_mode(),
             &mut pio,
             sm0,
             clocks.peripheral_clock.freq(),
         );
         let leds = Leds { caps_lock: onboard };
 
-        let underglow = Ws2812Pio::new(
+        // underglow is gpio 7 for pro micro
+        let underglow = Ws2812Direct::new(
             pins.gpio7.into_mode(),
             &mut pio,
             sm1,
@@ -175,8 +172,10 @@ mod app {
         );
         let underglow_state: bool = false;
 
+        // also 8 and 9 for pro micro
         let encoder_a = pins.gpio8.into_pull_up_input();
         let encoder_b = pins.gpio9.into_pull_up_input();
+
         let encoder = Encoder::new(
             encoder_a,
             encoder_b,
@@ -184,8 +183,16 @@ mod app {
             kb_layout::ENCODER_RIGHT,
         );
 
+        // pro micro scl = 17 sda = 16
+        #[cfg(feature = "kb2040")]
         let sda_pin = pins.gpio12.into_mode::<rp2040_hal::gpio::FunctionI2C>();
+        #[cfg(feature = "kb2040")]
         let scl_pin = pins.gpio13.into_mode::<rp2040_hal::gpio::FunctionI2C>();
+
+        #[cfg(feature = "rp2040-pro-micro")]
+        let sda_pin = pins.gpio16.into_mode::<rp2040_hal::gpio::FunctionI2C>();
+        #[cfg(feature = "rp2040-pro-micro")]
+        let scl_pin = pins.gpio17.into_mode::<rp2040_hal::gpio::FunctionI2C>();
 
         let i2c = rp2040_hal::I2C::i2c0(
             c.device.I2C0,
@@ -223,6 +230,43 @@ mod app {
 
         watchdog.start(10_000.microseconds());
 
+        #[cfg(feature = "rp2040-pro-micro")]
+        let matrix = DemuxMatrix::new(
+            [
+                pins.gpio29.into_push_pull_output().into(),
+                pins.gpio28.into_push_pull_output().into(),
+                pins.gpio27.into_push_pull_output().into(),
+                pins.gpio26.into_push_pull_output().into(),
+            ],
+            [
+                pins.gpio22.into_pull_up_input().into(),
+                pins.gpio20.into_pull_up_input().into(),
+                pins.gpio23.into_pull_up_input().into(),
+                pins.gpio21.into_pull_up_input().into(),
+                pins.gpio4.into_pull_up_input().into(),
+            ],
+            16,
+        );
+
+        #[cfg(feature = "bit-c-rp2040")]
+        let matrix = DemuxMatrix::new(
+            [
+                pins.gpio29.into_push_pull_output().into(),
+                pins.gpio28.into_push_pull_output().into(),
+                pins.gpio27.into_push_pull_output().into(),
+                pins.gpio26.into_push_pull_output().into(),
+            ],
+            [
+                pins.gpio18.into_pull_up_input().into(),
+                pins.gpio20.into_pull_up_input().into(),
+                pins.gpio19.into_pull_up_input().into(),
+                pins.gpio10.into_pull_up_input().into(),
+                pins.gpio4.into_pull_up_input().into(),
+            ],
+            16,
+        );
+
+        #[cfg(feature = "kb2040")]
         let matrix = DemuxMatrix::new(
             [
                 pins.gpio29.into_push_pull_output().into(),
@@ -244,7 +288,7 @@ mod app {
             Shared {
                 underglow,
                 underglow_state,
-                encoder,
+                encoder: encoder.unwrap(),
                 display,
                 display_state,
                 usb_dev,
@@ -384,7 +428,7 @@ mod app {
         }
 
         c.shared.encoder.lock(|e| {
-            if let Some(events) = e.read_events() {
+            if let Ok(Some(events)) = e.read_events() {
                 for event in events {
                     handle_event::spawn(Some(event)).unwrap();
                 }
