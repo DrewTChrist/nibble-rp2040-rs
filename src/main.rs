@@ -248,7 +248,7 @@ mod app {
             16,
         );
 
-        #[cfg(feature = "bit-c-rp2040")]
+        #[cfg(feature = "bit-c-pro")]
         let matrix = DemuxMatrix::new(
             [
                 pins.gpio29.into_push_pull_output().into(),

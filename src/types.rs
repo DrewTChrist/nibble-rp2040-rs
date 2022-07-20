@@ -26,7 +26,7 @@ mod rp2040_pro_micro {
     pub type Scl = Pin<bank0::Gpio17, Function<I2C>>;
 }
 
-mod bit_c_rp2040 {
+mod bit_c_pro {
     //type EncoderPadA = todo!();
     //type EncoderPadB = todo!();
     //type OnBoardLED = todo!();
@@ -57,13 +57,13 @@ pub mod active {
     pub type Scl = rp2040_pro_micro::Scl;
 }
 
-#[cfg(feature = "bit-c-rp2040")]
+#[cfg(feature = "bit-c-pro")]
 pub mod active {
-    use crate::types::bit_c_rp2040;
-    pub type EncoderPadA = bit_c_rp2040::EncoderPadA;
-    pub type EncoderPadB = bit_c_rp2040::EncoderPadB;
-    pub type OnBoardLED = bit_c_rp2040::OnBoardLED;
-    pub type Underglow = bit_c_rp2040::Underglow;
-    pub type Sda = bit_c_rp2040::Sda;
-    pub type Scl = bit_c_rp2040::Scl;
+    use crate::types::bit_c_pro;
+    pub type EncoderPadA = bit_c_pro::EncoderPadA;
+    pub type EncoderPadB = bit_c_pro::EncoderPadB;
+    pub type OnBoardLED = bit_c_pro::OnBoardLED;
+    pub type Underglow = bit_c_pro::Underglow;
+    pub type Sda = bit_c_pro::Sda;
+    pub type Scl = bit_c_pro::Scl;
 }

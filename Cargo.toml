@@ -33,7 +33,7 @@ default = ["boot2"]
 boot2 = ["rp2040-boot2"]
 kb2040 = []
 rp2040-pro-micro = []
-bit-c-rp2040 = []
+bit-c-pro = []
 
 # cargo build/run
 [profile.dev]
