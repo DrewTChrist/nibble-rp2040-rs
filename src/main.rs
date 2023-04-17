@@ -16,8 +16,7 @@ mod app {
         _embedded_hal_watchdog_Watchdog, _embedded_hal_watchdog_WatchdogEnable,
     };
     use defmt_rtt as _;
-    use embedded_time::duration::Extensions;
-    use embedded_time::rate::Extensions as RateExtensions;
+    use fugit::{ExtU32, RateExtU32};
     use panic_probe as _;
     use rp2040_hal;
     use rp2040_hal::{
@@ -26,7 +25,7 @@ mod app {
         pac::I2C0,
         pio::PIOExt,
         sio::Sio,
-        timer::{Alarm, Alarm0, Timer},
+        timer::{Alarm, Alarm0, Alarm1, Timer},
         usb::UsbBus,
         watchdog::Watchdog,
     };
@@ -57,7 +56,8 @@ mod app {
     use usb_device::device::UsbDeviceState;
     use ws2812_pio::Ws2812Direct;
 
-    const SCAN_TIME_US: u32 = 1000;
+    const SCAN_TIME_US: u32 = 2000;
+    const DISPLAY_UPDATE_TIME_US: u32 = 1700;
     const EXTERNAL_XTAL_FREQ_HZ: u32 = 12_000_000u32;
     static mut USB_BUS: Option<UsbBusAllocator<UsbBus>> = None;
 
@@ -106,6 +106,9 @@ mod app {
         usb_class: keyberon::Class<'static, UsbBus, Leds>,
         timer: Timer,
         alarm: Alarm0,
+        display_alarm: Alarm1,
+        #[lock_free]
+        previous: char,
         #[lock_free]
         matrix: DemuxMatrix<DynPin, DynPin, 16, 5>,
         layout: Layout<16, 5, 1, kb_layout::CustomActions>,
@@ -146,8 +149,11 @@ mod app {
 
         let mut timer = Timer::new(c.device.TIMER, &mut resets);
         let mut alarm = timer.alarm_0().unwrap();
-        let _ = alarm.schedule(SCAN_TIME_US.microseconds());
+        let _ = alarm.schedule(SCAN_TIME_US.micros());
         alarm.enable_interrupt();
+        let mut display_alarm = timer.alarm_1().unwrap();
+        let _ = display_alarm.schedule(DISPLAY_UPDATE_TIME_US.micros());
+        display_alarm.enable_interrupt();
 
         let (mut pio, sm0, sm1, _, _) = c.device.PIO0.split(&mut resets);
 
@@ -200,7 +206,7 @@ mod app {
             scl_pin,
             400_u32.kHz(),
             &mut resets,
-            clocks.peripheral_clock,
+            &clocks.peripheral_clock,
         );
 
         let interface = ssd1306::I2CDisplayInterface::new(i2c);
@@ -211,7 +217,7 @@ mod app {
         display.clear();
         display.flush().unwrap();
 
-        let display_state = false;
+        let display_state = true;
 
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
@@ -228,7 +234,7 @@ mod app {
         let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, leds);
         let usb_dev = keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() });
 
-        watchdog.start(10_000.microseconds());
+        watchdog.start(500_000_u32.micros());
 
         #[cfg(feature = "rp2040-pro-micro")]
         let matrix = DemuxMatrix::new(
@@ -295,6 +301,8 @@ mod app {
                 usb_class,
                 timer,
                 alarm,
+                previous: 0 as char,
+                display_alarm,
                 matrix: matrix.unwrap(),
                 debouncer: Debouncer::new([[false; 16]; 5], [[false; 16]; 5], 10),
                 layout: Layout::new(&kb_layout::LAYERS),
@@ -316,7 +324,7 @@ mod app {
         });
     }
 
-    #[task(priority = 3, shared = [underglow, underglow_state])]
+    #[task(priority = 1, shared = [underglow, underglow_state])]
     fn handle_underglow(mut c: handle_underglow::Context) {
         let underglow = c.shared.underglow;
         c.shared.underglow_state.lock(|us| {
@@ -339,10 +347,11 @@ mod app {
         });
     }
 
-    #[task(priority = 3, shared = [display, display_state])]
+    #[task(binds = TIMER_IRQ_1, priority = 1, shared = [display, display_state, display_alarm])]
     fn handle_display(c: handle_display::Context) {
         let display = c.shared.display;
         let mut display_state = c.shared.display_state;
+        let mut alarm = c.shared.display_alarm;
 
         let text_style = MonoTextStyleBuilder::new()
             .font(&FONT_7X14_BOLD)
@@ -350,10 +359,9 @@ mod app {
             .build();
 
         display_state.lock(|ds| {
-            if *ds {
+            if !*ds {
                 display.clear();
                 display.flush().unwrap();
-                *ds = false;
             } else {
                 display.clear();
 
@@ -368,14 +376,18 @@ mod app {
                     .unwrap();
 
                 display.flush().unwrap();
-                *ds = true;
             }
+        });
+        alarm.lock(|a| {
+            a.clear_interrupt();
+            let _ = a.schedule(DISPLAY_UPDATE_TIME_US.micros());
         });
     }
 
-    #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout])]
+    #[task(priority = 2, capacity = 8, shared = [usb_dev, usb_class, layout, display_state])]
     fn handle_event(mut c: handle_event::Context, event: Option<Event>) {
         let mut layout = c.shared.layout;
+        let mut display_state = c.shared.display_state;
         match event {
             None => {
                 if let CustomEvent::Press(event) = layout.lock(|l| l.tick()) {
@@ -387,7 +399,9 @@ mod app {
                             rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
                         }
                         kb_layout::CustomActions::Display => {
-                            handle_display::spawn().unwrap();
+                            display_state.lock(|state| {
+                                *state = !*state;
+                            });
                         }
                     };
                 }
@@ -412,15 +426,8 @@ mod app {
         while let Ok(0) = c.shared.usb_class.lock(|k| k.write(report.as_bytes())) {}
     }
 
-    #[task(binds = TIMER_IRQ_0, priority = 1, shared = [encoder, matrix, debouncer, timer, alarm, watchdog, usb_dev, usb_class])]
+    #[task(binds = TIMER_IRQ_0, priority = 2, shared = [encoder, matrix, debouncer, timer, alarm, watchdog, usb_dev, usb_class])]
     fn scan_timer_irq(mut c: scan_timer_irq::Context) {
-        let mut alarm = c.shared.alarm;
-
-        alarm.lock(|a| {
-            a.clear_interrupt();
-            let _ = a.schedule(SCAN_TIME_US.microseconds());
-        });
-
         c.shared.watchdog.feed();
 
         for event in c.shared.debouncer.events(c.shared.matrix.get().unwrap()) {
@@ -436,5 +443,12 @@ mod app {
         });
 
         handle_event::spawn(None).unwrap();
+
+        let mut alarm = c.shared.alarm;
+
+        alarm.lock(|a| {
+            a.clear_interrupt();
+            let _ = a.schedule(SCAN_TIME_US.micros());
+        });
     }
 }
