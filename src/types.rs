@@ -1,29 +1,32 @@
 #![allow(dead_code)]
 
 mod kb2040 {
-    use rp2040_hal::gpio::{bank0, Function, Pin, PullUpInput, I2C};
+    use rp2040_hal::gpio::{
+        bank0, FunctionI2c, FunctionPio0, FunctionSioInput, Pin, PullDown, PullUp,
+    };
     use rp2040_hal::pac::PIO0;
     use rp2040_hal::pio::{SM0, SM1};
     use ws2812_pio::Ws2812Direct;
-    pub type EncoderPadA = Pin<bank0::Gpio8, PullUpInput>;
-    pub type EncoderPadB = Pin<bank0::Gpio9, PullUpInput>;
-    pub type OnBoardLED = Ws2812Direct<PIO0, SM0, bank0::Gpio17>;
-    pub type Underglow = Ws2812Direct<PIO0, SM1, bank0::Gpio7>;
-    pub type Sda = Pin<bank0::Gpio12, Function<I2C>>;
-    pub type Scl = Pin<bank0::Gpio13, Function<I2C>>;
+    pub type EncoderPadA = Pin<bank0::Gpio8, FunctionSioInput, PullUp>;
+    pub type EncoderPadB = Pin<bank0::Gpio9, FunctionSioInput, PullUp>;
+    pub type OnBoardLED = Ws2812Direct<PIO0, SM0, Pin<bank0::Gpio17, FunctionPio0, PullDown>>;
+    pub type Underglow = Ws2812Direct<PIO0, SM1, Pin<bank0::Gpio7, FunctionPio0, PullDown>>;
+    pub type Sda = Pin<bank0::Gpio12, FunctionI2c, PullDown>;
+    pub type Scl = Pin<bank0::Gpio13, FunctionI2c, PullDown>;
 }
 
 mod rp2040_pro_micro {
-    use rp2040_hal::gpio::{bank0, Function, Pin, PullUpInput, I2C};
+    //use rp2040_hal::gpio::{bank0, Function, Pin, PullUpInput, I2C};
+    use rp2040_hal::gpio::{bank0, DynFunction, FunctionI2c, Pin, PullUp};
     use rp2040_hal::pac::PIO0;
     use rp2040_hal::pio::{SM0, SM1};
     use ws2812_pio::Ws2812Direct;
-    pub type EncoderPadA = Pin<bank0::Gpio8, PullUpInput>;
-    pub type EncoderPadB = Pin<bank0::Gpio9, PullUpInput>;
+    pub type EncoderPadA = Pin<bank0::Gpio8, DynFunction, PullUp>;
+    pub type EncoderPadB = Pin<bank0::Gpio9, DynFunction, PullUp>;
     pub type OnBoardLED = Ws2812Direct<PIO0, SM0, bank0::Gpio25>;
     pub type Underglow = Ws2812Direct<PIO0, SM1, bank0::Gpio7>;
-    pub type Sda = Pin<bank0::Gpio16, Function<I2C>>;
-    pub type Scl = Pin<bank0::Gpio17, Function<I2C>>;
+    pub type Sda = Pin<bank0::Gpio16, FunctionI2c, PullUp>;
+    pub type Scl = Pin<bank0::Gpio17, FunctionI2c, PullUp>;
 }
 
 mod bit_c_pro {

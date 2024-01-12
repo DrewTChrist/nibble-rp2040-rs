@@ -64,7 +64,7 @@ where
         for current_col in 0..self.true_cols {
             self.select_column(current_col)?;
             cortex_m::asm::delay(5000);
-            for (ri, row) in (&mut self.rows).iter_mut().enumerate() {
+            for (ri, row) in self.rows.iter_mut().enumerate() {
                 keys[ri][current_col] = row.is_low()?;
             }
         }

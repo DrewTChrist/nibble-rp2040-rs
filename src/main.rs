@@ -16,13 +16,12 @@ mod app {
         _embedded_hal_watchdog_Watchdog, _embedded_hal_watchdog_WatchdogEnable,
     };
     use defmt_rtt as _;
-    use embedded_time::duration::Extensions;
-    use embedded_time::rate::Extensions as RateExtensions;
     use panic_probe as _;
     use rp2040_hal;
     use rp2040_hal::{
-        clocks::{init_clocks_and_plls, Clock},
-        gpio::dynpin::DynPin,
+        clocks::{Clock, ClocksManager},
+        fugit::{Duration, Rate},
+        gpio::{DynPinId, DynPullType, FunctionSioInput, FunctionSioOutput, PullUp},
         pac::I2C0,
         pio::PIOExt,
         sio::Sio,
@@ -58,7 +57,7 @@ mod app {
     use ws2812_pio::Ws2812Direct;
 
     const SCAN_TIME_US: u32 = 1000;
-    const EXTERNAL_XTAL_FREQ_HZ: u32 = 12_000_000u32;
+    const _EXTERNAL_XTAL_FREQ_HZ: u32 = 12_000_000u32;
     static mut USB_BUS: Option<UsbBusAllocator<UsbBus>> = None;
 
     pub struct Leds {
@@ -107,7 +106,12 @@ mod app {
         timer: Timer,
         alarm: Alarm0,
         #[lock_free]
-        matrix: DemuxMatrix<DynPin, DynPin, 16, 5>,
+        matrix: DemuxMatrix<
+            rp2040_hal::gpio::Pin<DynPinId, FunctionSioOutput, DynPullType>,
+            rp2040_hal::gpio::Pin<DynPinId, FunctionSioInput, PullUp>,
+            16,
+            5,
+        >,
         layout: Layout<16, 5, 1, kb_layout::CustomActions>,
         #[lock_free]
         debouncer: Debouncer<[[bool; 16]; 5]>,
@@ -124,18 +128,6 @@ mod app {
         let mut watchdog = Watchdog::new(c.device.WATCHDOG);
         watchdog.pause_on_debug(false);
 
-        let clocks = init_clocks_and_plls(
-            EXTERNAL_XTAL_FREQ_HZ,
-            c.device.XOSC,
-            c.device.CLOCKS,
-            c.device.PLL_SYS,
-            c.device.PLL_USB,
-            &mut resets,
-            &mut watchdog,
-        )
-        .ok()
-        .unwrap();
-
         let sio = Sio::new(c.device.SIO);
         let pins = rp2040_hal::gpio::Pins::new(
             c.device.IO_BANK0,
@@ -143,10 +135,10 @@ mod app {
             sio.gpio_bank0,
             &mut resets,
         );
-
-        let mut timer = Timer::new(c.device.TIMER, &mut resets);
+        let clock_manager = ClocksManager::new(c.device.CLOCKS);
+        let mut timer = Timer::new(c.device.TIMER, &mut resets, &clock_manager);
         let mut alarm = timer.alarm_0().unwrap();
-        let _ = alarm.schedule(SCAN_TIME_US.microseconds());
+        let _ = alarm.schedule(Duration::<u32, 1, 1000000>::micros(SCAN_TIME_US));
         alarm.enable_interrupt();
 
         let (mut pio, sm0, sm1, _, _) = c.device.PIO0.split(&mut resets);
@@ -154,21 +146,22 @@ mod app {
         // onboard led is gpio 25 for pro micro
         let onboard = Ws2812Direct::new(
             #[cfg(feature = "kb2040")]
-            pins.gpio17.into_mode(),
+            //pins.gpio17.into_mode(),
+            pins.gpio17.into_function(),
             #[cfg(feature = "rp2040-pro-micro")]
-            pins.gpio25.into_mode(),
+            pins.gpio25.into_function(),
             &mut pio,
             sm0,
-            clocks.peripheral_clock.freq(),
+            clock_manager.peripheral_clock.freq(),
         );
         let leds = Leds { caps_lock: onboard };
 
         // underglow is gpio 7 for pro micro
         let underglow = Ws2812Direct::new(
-            pins.gpio7.into_mode(),
+            pins.gpio7.into_function(),
             &mut pio,
             sm1,
-            clocks.peripheral_clock.freq(),
+            clock_manager.peripheral_clock.freq(),
         );
         let underglow_state: bool = false;
 
@@ -185,9 +178,9 @@ mod app {
 
         // pro micro scl = 17 sda = 16
         #[cfg(feature = "kb2040")]
-        let sda_pin = pins.gpio12.into_mode::<rp2040_hal::gpio::FunctionI2C>();
+        let sda_pin = pins.gpio12.into_function::<rp2040_hal::gpio::FunctionI2C>();
         #[cfg(feature = "kb2040")]
-        let scl_pin = pins.gpio13.into_mode::<rp2040_hal::gpio::FunctionI2C>();
+        let scl_pin = pins.gpio13.into_function::<rp2040_hal::gpio::FunctionI2C>();
 
         #[cfg(feature = "rp2040-pro-micro")]
         let sda_pin = pins.gpio16.into_mode::<rp2040_hal::gpio::FunctionI2C>();
@@ -198,9 +191,10 @@ mod app {
             c.device.I2C0,
             sda_pin,
             scl_pin,
-            400_u32.kHz(),
+            //400_u32.kHz(),
+            Rate::<u32, 1, 1>::kHz(400_u32),
             &mut resets,
-            clocks.peripheral_clock,
+            &clock_manager.peripheral_clock,
         );
 
         let interface = ssd1306::I2CDisplayInterface::new(i2c);
@@ -216,7 +210,7 @@ mod app {
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
             c.device.USBCTRL_DPRAM,
-            clocks.usb_clock,
+            clock_manager.usb_clock,
             true,
             &mut resets,
         ));
@@ -228,7 +222,8 @@ mod app {
         let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, leds);
         let usb_dev = keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() });
 
-        watchdog.start(10_000.microseconds());
+        //watchdog.start(10_000.microseconds());
+        watchdog.start(Duration::<u32, 1, 1000000>::micros(10_000));
 
         #[cfg(feature = "rp2040-pro-micro")]
         let matrix = DemuxMatrix::new(
@@ -269,17 +264,29 @@ mod app {
         #[cfg(feature = "kb2040")]
         let matrix = DemuxMatrix::new(
             [
-                pins.gpio29.into_push_pull_output().into(),
-                pins.gpio28.into_push_pull_output().into(),
-                pins.gpio27.into_push_pull_output().into(),
-                pins.gpio26.into_push_pull_output().into(),
+                pins.gpio29
+                    .into_push_pull_output()
+                    .into_pull_type::<DynPullType>()
+                    .into_dyn_pin(),
+                pins.gpio28
+                    .into_push_pull_output()
+                    .into_pull_type::<DynPullType>()
+                    .into_dyn_pin(),
+                pins.gpio27
+                    .into_push_pull_output()
+                    .into_pull_type::<DynPullType>()
+                    .into_dyn_pin(),
+                pins.gpio26
+                    .into_push_pull_output()
+                    .into_pull_type::<DynPullType>()
+                    .into_dyn_pin(),
             ],
             [
-                pins.gpio18.into_pull_up_input().into(),
-                pins.gpio20.into_pull_up_input().into(),
-                pins.gpio19.into_pull_up_input().into(),
-                pins.gpio10.into_pull_up_input().into(),
-                pins.gpio4.into_pull_up_input().into(),
+                pins.gpio18.into_pull_up_input().into_dyn_pin(),
+                pins.gpio20.into_pull_up_input().into_dyn_pin(),
+                pins.gpio19.into_pull_up_input().into_dyn_pin(),
+                pins.gpio10.into_pull_up_input().into_dyn_pin(),
+                pins.gpio4.into_pull_up_input().into_dyn_pin(),
             ],
             16,
         );
@@ -418,7 +425,7 @@ mod app {
 
         alarm.lock(|a| {
             a.clear_interrupt();
-            let _ = a.schedule(SCAN_TIME_US.microseconds());
+            let _ = a.schedule(Duration::<u32, 1, 1000000>::micros(SCAN_TIME_US));
         });
 
         c.shared.watchdog.feed();
