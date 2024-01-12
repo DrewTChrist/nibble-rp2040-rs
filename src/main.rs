@@ -19,7 +19,7 @@ mod app {
     use panic_probe as _;
     use rp2040_hal;
     use rp2040_hal::{
-        clocks::{Clock, ClocksManager},
+        clocks::Clock,
         fugit::{Duration, Rate},
         gpio::{DynPinId, DynPullType, FunctionSioInput, FunctionSioOutput, PullUp},
         pac::I2C0,
@@ -57,7 +57,7 @@ mod app {
     use ws2812_pio::Ws2812Direct;
 
     const SCAN_TIME_US: u32 = 1000;
-    const _EXTERNAL_XTAL_FREQ_HZ: u32 = 12_000_000u32;
+    const EXTERNAL_XTAL_FREQ_HZ: u32 = 12_000_000u32;
     static mut USB_BUS: Option<UsbBusAllocator<UsbBus>> = None;
 
     pub struct Leds {
@@ -128,6 +128,18 @@ mod app {
         let mut watchdog = Watchdog::new(c.device.WATCHDOG);
         watchdog.pause_on_debug(false);
 
+        let clocks = rp2040_hal::clocks::init_clocks_and_plls(
+            EXTERNAL_XTAL_FREQ_HZ,
+            c.device.XOSC,
+            c.device.CLOCKS,
+            c.device.PLL_SYS,
+            c.device.PLL_USB,
+            &mut resets,
+            &mut watchdog,
+        )
+        .ok()
+        .unwrap();
+
         let sio = Sio::new(c.device.SIO);
         let pins = rp2040_hal::gpio::Pins::new(
             c.device.IO_BANK0,
@@ -135,8 +147,8 @@ mod app {
             sio.gpio_bank0,
             &mut resets,
         );
-        let clock_manager = ClocksManager::new(c.device.CLOCKS);
-        let mut timer = Timer::new(c.device.TIMER, &mut resets, &clock_manager);
+
+        let mut timer = Timer::new(c.device.TIMER, &mut resets, &clocks);
         let mut alarm = timer.alarm_0().unwrap();
         let _ = alarm.schedule(Duration::<u32, 1, 1000000>::micros(SCAN_TIME_US));
         alarm.enable_interrupt();
@@ -146,13 +158,12 @@ mod app {
         // onboard led is gpio 25 for pro micro
         let onboard = Ws2812Direct::new(
             #[cfg(feature = "kb2040")]
-            //pins.gpio17.into_mode(),
             pins.gpio17.into_function(),
             #[cfg(feature = "rp2040-pro-micro")]
             pins.gpio25.into_function(),
             &mut pio,
             sm0,
-            clock_manager.peripheral_clock.freq(),
+            clocks.peripheral_clock.freq(),
         );
         let leds = Leds { caps_lock: onboard };
 
@@ -161,7 +172,7 @@ mod app {
             pins.gpio7.into_function(),
             &mut pio,
             sm1,
-            clock_manager.peripheral_clock.freq(),
+            clocks.peripheral_clock.freq(),
         );
         let underglow_state: bool = false;
 
@@ -191,10 +202,9 @@ mod app {
             c.device.I2C0,
             sda_pin,
             scl_pin,
-            //400_u32.kHz(),
             Rate::<u32, 1, 1>::kHz(400_u32),
             &mut resets,
-            &clock_manager.peripheral_clock,
+            &clocks.peripheral_clock,
         );
 
         let interface = ssd1306::I2CDisplayInterface::new(i2c);
@@ -210,7 +220,7 @@ mod app {
         let usb_bus = UsbBusAllocator::new(UsbBus::new(
             c.device.USBCTRL_REGS,
             c.device.USBCTRL_DPRAM,
-            clock_manager.usb_clock,
+            clocks.usb_clock,
             true,
             &mut resets,
         ));
@@ -222,7 +232,6 @@ mod app {
         let usb_class = keyberon::new_class(unsafe { USB_BUS.as_ref().unwrap() }, leds);
         let usb_dev = keyberon::new_device(unsafe { USB_BUS.as_ref().unwrap() });
 
-        //watchdog.start(10_000.microseconds());
         watchdog.start(Duration::<u32, 1, 1000000>::micros(10_000));
 
         #[cfg(feature = "rp2040-pro-micro")]
